@@ -56,6 +56,9 @@ jobs:
       - name: Test D-Star host list updates
         run: python3 .github/scripts/test_dstar_hosts.py
 
+      - name: Test NXDN host and ID list updates
+        run: python3 .github/scripts/test_nxdn_hosts.py
+
       - name: Test mode boot and runtime controls
         run: python3 .github/scripts/test_mode_control.py
 
@@ -66,6 +69,15 @@ jobs:
           test -x /usr/local/bin/mmdvm-status
           test -x /usr/local/bin/DVconfig
           ldd /usr/local/bin/mmdvm-status /usr/local/bin/DVconfig
+
+      - name: Build and install NXDNGateway from maintained fork
+        run: |
+          source ./install.sh
+          ensure_user_mmdvm
+          ensure_dirs
+          install_nxdngateway
+          test -x /usr/local/bin/NXDNGateway
+          ldd /usr/local/bin/NXDNGateway
 
       - name: Smoke test database, backends and HTTP API
         run: python3 .github/scripts/smoke_test.py

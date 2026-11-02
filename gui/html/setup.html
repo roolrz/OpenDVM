@@ -100,6 +100,7 @@
     .tile.dstar   { --accent: #64a8ff; }   /* blau */
     .tile.ysf     { --accent: #b889f4; }   /* lila */
     .tile.dmr     { --accent: #3ddc97; }   /* grün */
+    .tile.nxdn    { --accent: #ee9d52; }
     .tile.actions-tile { --accent: #e5484d; }
 
     /* linke Akzent-Leiste an jeder Kachel */
@@ -374,6 +375,35 @@
       </section>
 
       <!-- TILE: ACTIONS -->
+      <section class="tile center nxdn">
+        <h2>NXDN</h2>
+        <div class="mode-controls" data-mode="nxdn">
+          <label><input type="checkbox" id="NxdnStartOnBoot" name="NxdnStartOnBoot" disabled />Start on boot</label>
+          <output id="nxdnState" aria-live="polite">Loading…</output>
+          <button type="button" data-action="start" disabled>Start</button>
+          <button type="button" data-action="stop" disabled>Stop</button>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label for="NxdnId">NXDN ID</label>
+            <input id="NxdnId" name="NxdnId" type="number" min="0" max="65535" step="1" class="mono" value="0" />
+            <div class="hint">Your NXDN radio ID (1–65535), separate from DMR ID. Set it and save before starting NXDN.</div>
+          </div>
+          <div class="field">
+            <label for="NxdnRAN">RAN</label>
+            <input id="NxdnRAN" name="NxdnRAN" type="number" min="0" max="63" step="1" class="mono" value="1" />
+            <div class="hint">Radio access number; match your radio.</div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label for="NxdnStatic">Static talkgroups</label>
+            <input id="NxdnStatic" name="NxdnStatic" class="mono" placeholder="10200,65000" />
+            <div class="hint">Optional, comma-separated TGs (1–65535). Leave empty for selection by RF traffic.</div>
+          </div>
+        </div>
+      </section>
+
       <section class="tile center actions-tile">
         <h2>Actions</h2>
 
@@ -503,7 +533,7 @@
     let modeBusy = false;
     let modesReady = false;
     let configReady = false;
-    const bootFields = ['DstarStartOnBoot', 'DmrStartOnBoot', 'YsfStartOnBoot'];
+    const bootFields = ['DstarStartOnBoot', 'DmrStartOnBoot', 'YsfStartOnBoot', 'NxdnStartOnBoot'];
 
     function updateControls(){
       saveBtn.disabled = saving || modeBusy || !modesReady || !configReady;
@@ -849,6 +879,9 @@
         setVal('Password',      pick('Password'));
         setVal('Name',          pick('Name'));
         setVal('BmApiKey',      pick('BmApiKey'));  // setVal kann fehlende Elemente handeln
+        setVal('NxdnId',        pick('NxdnId'));
+        setVal('NxdnRAN',       pick('NxdnRAN'));
+        setVal('NxdnStatic',    pick('NxdnStatic'));
 
         // Nach dem Befüllen Default-Flags neu anwenden
         if (window.__updateFreqHint) window.__updateFreqHint();

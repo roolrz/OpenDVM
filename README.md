@@ -278,6 +278,21 @@ Run `sudo ./install_update.sh` once to install the mode controller, service hook
 and permissions. Updates preserve boot policy and avoid starting stopped gateways.
 On the first update, a mode already disabled in MMDVMHost stays disabled at boot.
 
+NXDN is installed but disabled by default. In its settings card, enter your
+**NXDN ID** (1–65535; separate from DMR ID), **RAN** (0–63, matching your radio)
+and optional comma-separated **Static talkgroups**. Save before using the runtime
+Start button. Empty static TGs allow selection by RF traffic. The dashboard shows
+the currently selected NXDN TG, every configured static TG, RF/NET calls and BER
+when the host reports it. Modes share the modem; concurrent RF protocols cannot
+be received at the same time.
+
+An existing installation gains NXDNGateway by running `sudo ./install_update.sh`.
+Its source is built from [roolrz/NXDNClients](https://github.com/roolrz/NXDNClients)
+at the revision tested by CI, recorded in `scripts/install_nxdn.sh`. Existing
+`/etc/nxdngateway` settings are preserved. The current gateway requires a local
+MQTT broker, so the installer includes and enables Mosquitto. Gateway diagnostics
+are in `/var/log/mmdvm/NXDNGateway.log` and `journalctl -u nxdngateway`.
+
 You can still manually edit the generated configuration files if needed — although this is rarely necessary. The only setting you might need to adjust is the MMDVM modem baud rate. By default, it’s set to 115200 Bd, which works for most MMDVM boards. However, some boards (for example, Repeater Builder boards) may require 460800 Bd — see the [Modem] section in /etc/MMDVMHost.ini.
 
 D-Star announcements default to English (`language=0` in `/etc/ircddbgateway`).
@@ -385,6 +400,35 @@ that restart, and `--dest-dir` supports a different compiled data directory.
 The updater preserves existing protocol settings. Per-user host files in the
 `mmdvm` account's home directory are also loaded by the gateway; the script
 reports those files for inspection and preserves their custom entries.
+
+### Update NXDN reflectors and IDs
+
+Fresh installation and `install_update.sh` automatically refresh NXDN's server
+list and RadioID lookup table. To update them separately:
+
+```bash
+sudo /usr/local/sbin/opendvm-update-nxdn-hosts
+# Or, from the checkout:
+sudo python3 ./update_nxdn_hosts.py
+```
+
+The updater downloads Pi-Star's `NXDN_Hosts.txt` and RadioID's NXDN CSV. It
+validates both before replacing `/usr/local/etc/NXDNHosts.json` and `NXDN.csv`,
+with at least 50 distinct valid reflectors and 100 valid IDs. Previous contents
+are backed up as `.bak`; download/validation failures retain the active files.
+Unchanged lists do not restart the gateway, and changed lists only restart a
+gateway that is already running. `--no-restart` defers that restart.
+
+DNS happens during the update, with 16 parallel workers and a three-second limit
+per hostname. The gateway reads numeric IPv4/IPv6 addresses, avoiding sequential
+DNS waits during startup. Failed lookups reuse that TG's previous numeric entry
+when available; otherwise unresolved entries are omitted. If fewer than 50 usable
+reflectors remain or more than 20% have no usable address, the update is rejected.
+
+Private entries in `/usr/local/etc/NXDNHosts.private` are preserved. Use
+`TG numeric-IP port` per line; private hostnames can still delay gateway startup
+and trigger a warning. The updater supports `--hosts-url`, `--ids-url` and
+`--dest-dir` for alternate feeds or testing.
 
 ---
 

@@ -13,6 +13,7 @@ handleDVconfig::handleDVconfig()
     , ircddb_renderer("/etc/ircddbgateway", true)
     , dmr_renderer("/etc/dmrgateway", true)
     , ysf_renderer("/etc/ysfgateway", true)
+    , nxdn_renderer("/etc/nxdngateway", true)
 {
 }
 
@@ -44,6 +45,11 @@ void handleDVconfig::readConfig() {
     site.Address     = dmr_renderer.findValue("DMR Network 1", "Address");
     site.Password    = dmr_renderer.findValue("DMR Network 1", "Password");
     site.Name        = dmr_renderer.findValue("DMR Network 1", "Name");
+    site.NxdnId      = host_renderer.findValue("NXDN", "Id");
+    if (site.NxdnId.empty()) site.NxdnId = "0";
+    site.NxdnRAN     = host_renderer.findValue("NXDN", "RAN");
+    if (site.NxdnRAN.empty()) site.NxdnRAN = "1";
+    site.NxdnStatic  = nxdn_renderer.findValue("Network", "Static");
     if (FILE* pipe = popen("sudo -n /usr/local/sbin/opendvm-mode-control boot-status", "r")) {
         std::string output;
         std::array<char, 1024> buffer{};
@@ -55,6 +61,7 @@ void handleDVconfig::readConfig() {
                 site.DstarStartOnBoot = data.at("dstar").get<bool>();
                 site.DmrStartOnBoot = data.at("dmr").get<bool>();
                 site.YsfStartOnBoot = data.at("ysf").get<bool>();
+                site.NxdnStartOnBoot = data.at("nxdn").get<bool>();
             }
         } catch (const std::exception& error) {
             std::fprintf(stderr, "[modes] cannot read boot settings: %s\n", error.what());
@@ -70,11 +77,13 @@ bool handleDVconfig::saveConfig() {
     ircddb_renderer = renderConfigFile("/etc/ircddbgateway", false);
     dmr_renderer = renderConfigFile("/etc/dmrgateway", false);
     ysf_renderer = renderConfigFile("/etc/ysfgateway", false);
+    nxdn_renderer = renderConfigFile("/etc/nxdngateway", false);
     // 1) Fatal: alle Dateien müssen existieren/lesbar sein
     if (!host_renderer.isLoaded())   { std::fprintf(stderr, "[saveConfig] missing/unreadable: /etc/MMDVMHost.ini\n"); return false; }
     if (!ircddb_renderer.isLoaded()) { std::fprintf(stderr, "[saveConfig] missing/unreadable: /etc/ircddbgateway\n"); return false; }
     if (!ysf_renderer.isLoaded())    { std::fprintf(stderr, "[saveConfig] missing/unreadable: /etc/ysfgateway\n"); return false; }
     if (!dmr_renderer.isLoaded())    { std::fprintf(stderr, "[saveConfig] missing/unreadable: /etc/dmrgateway\n"); return false; }
+    if (!nxdn_renderer.isLoaded())   { applyError = "Missing /etc/nxdngateway; run install_update.sh"; return false; }
 
     // 2) Werte setzen
     bool chg_host, chg_ircddb, chg_ysf, chg_dmr;
@@ -92,6 +101,18 @@ bool handleDVconfig::saveConfig() {
     chg_host |= host_renderer.setValue("Description", site.Description, "Info");
     chg_host |= host_renderer.setValue("URL",         site.URL,         "Info");
     chg_host |= host_renderer.setValue("Module",      site.Module,     "D-Star");
+    chg_host |= host_renderer.setValue("Id",          site.NxdnId,     "NXDN");
+    chg_host |= host_renderer.setValue("RAN",         site.NxdnRAN,    "NXDN");
+
+    bool chg_nxdn = nxdn_renderer.setValue("Callsign", site.Callsign, "General");
+    chg_nxdn |= nxdn_renderer.setValue("RXFrequency", site.RXFrequency, "Info");
+    chg_nxdn |= nxdn_renderer.setValue("TXFrequency", site.TXFrequency, "Info");
+    chg_nxdn |= nxdn_renderer.setValue("Latitude", site.Latitude, "Info");
+    chg_nxdn |= nxdn_renderer.setValue("Longitude", site.Longitude, "Info");
+    chg_nxdn |= nxdn_renderer.setValue("Height", site.Height, "Info");
+    chg_nxdn |= nxdn_renderer.setValue("Name", site.Location, "Info");
+    chg_nxdn |= nxdn_renderer.setValue("Description", site.Description, "Info");
+    chg_nxdn |= nxdn_renderer.setValue("Static", site.NxdnStatic, "Network");
 
     // /etc/ircddbgateway (flat)
     double tx = std::stoll(site.TXFrequency) / 1e6;
@@ -174,12 +195,18 @@ bool handleDVconfig::saveConfig() {
         if (!dmr_renderer.saveConfigFile()) { std::fprintf(stderr, "[saveConfig] write failed: /etc/dmrgateway\n"); return false; }
     }
 
+    if (chg_nxdn && !nxdn_renderer.saveConfigFile()) {
+        applyError = "Writing /etc/nxdngateway failed";
+        return false;
+    }
+
     // Apply RF flags, gateway state and boot policy together, after all files
     // have been written. The controller queues one shared-modem restart.
     const std::string command = std::string("sudo -n /usr/local/sbin/opendvm-mode-control configure ")
         + (site.DstarStartOnBoot ? "1 " : "0 ")
         + (site.DmrStartOnBoot ? "1 " : "0 ")
-        + (site.YsfStartOnBoot ? "1" : "0");
+        + (site.YsfStartOnBoot ? "1 " : "0 ")
+        + (site.NxdnStartOnBoot ? "1" : "0");
     FILE* pipe = popen(command.c_str(), "r");
     if (!pipe) { applyError = "Mode controller could not start"; return false; }
     std::string output;

@@ -20,7 +20,7 @@ if ($method === 'POST') {
     }
     $action = $_POST['action'] ?? '';
     $mode = $_POST['mode'] ?? '';
-    if (!in_array($action, ['start', 'stop'], true) || !in_array($mode, ['dstar', 'dmr', 'ysf'], true)) {
+    if (!in_array($action, ['start', 'stop'], true) || !in_array($mode, ['dstar', 'dmr', 'ysf', 'nxdn'], true)) {
         mode_response(400, ['ok' => false, 'error' => 'Invalid mode or action']);
     }
     $arguments = [$action, $mode];

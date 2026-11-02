@@ -633,6 +633,10 @@
               <span class="k">Fusion:</span><span id="refl-fusion" class="v">----</span>
               <div id="ysf-options" class="dtmf-note" style="display:none"></div>
             </div>
+            <div class="refl-item refl-item--grid" id="nxdnRow">
+              <span class="k">NXDN:</span><span id="refl-nxdn" class="v">----</span>
+              <div id="nxdn-static" class="dtmf-note" hidden></div>
+            </div>
           </div>
         </section>
 
@@ -885,6 +889,8 @@
             txt = `${ts}/${tg}`;                        // z.B. TS2/TG26384
           } else if (mode.includes("YSF") || mode.includes("FUSION")) {
             txt = hasDG ? `DG${d.dgid}` : "–";          // YSF: DG-ID
+          } else if (mode === "NXDN") {
+            txt = hasDG ? `TG${d.dgid}` : "–";
           } else {
             txt = hasDG ? String(d.dgid) : "–";         // Fallback
           }
@@ -1134,8 +1140,8 @@
           if (!r.ok) throw new Error(r.status + " " + r.statusText);
           const d = await r.json(); // { dstar: n, ysf: n, dmr: n }
 
-          const labels = ["D-Star", "YSF", "DMR"];
-          const data = [d.dstar || 0, d.ysf || 0, d.dmr || 0];
+          const labels = ["D-Star", "YSF", "DMR", "NXDN"];
+          const data = [d.dstar || 0, d.ysf || 0, d.dmr || 0, d.nxdn || 0];
 
           if (!modeChart) {
             const ctx = document.getElementById("modeChart").getContext("2d");
@@ -1149,8 +1155,8 @@
                     data,
                     borderWidth: 1,
                     // Farben passend zu deinen Mode-Kacheln, aber etwas leuchtender
-                    backgroundColor: ["#2ea1ff", "#ffc857", "#3ddc97"],
-                    borderColor: ["#2ea1ff", "#ffc857", "#3ddc97"],
+                    backgroundColor: ["#2ea1ff", "#ffc857", "#3ddc97", "#ee9d52"],
+                    borderColor: ["#2ea1ff", "#ffc857", "#3ddc97", "#ee9d52"],
                   },
                 ],
               },
@@ -1191,9 +1197,9 @@
           if (!r.ok) throw new Error(r.status + " " + r.statusText);
           const d = await r.json(); // { dstar:{RF,NET}, ysf:{RF,NET}, dmr:{RF,NET} }
 
-          const labels = ["D-Star", "YSF", "DMR"];
-          const rf = [d.dstar?.RF || 0, d.ysf?.RF || 0, d.dmr?.RF || 0];
-          const net = [d.dstar?.NET || 0, d.ysf?.NET || 0, d.dmr?.NET || 0];
+          const labels = ["D-Star", "YSF", "DMR", "NXDN"];
+          const rf = [d.dstar?.RF || 0, d.ysf?.RF || 0, d.dmr?.RF || 0, d.nxdn?.RF || 0];
+          const net = [d.dstar?.NET || 0, d.ysf?.NET || 0, d.dmr?.NET || 0, d.nxdn?.NET || 0];
 
           if (!modeSplitChart) {
             const ctx = document.getElementById("modeSplitChart").getContext("2d");
@@ -1254,7 +1260,7 @@
       }
 
       function renderReflector(d) {
-        const modes = ["dstar", "dmr", "fusion"];
+        const modes = ["dstar", "dmr", "fusion", "nxdn"];
         for (const m of modes) {
           const el = document.getElementById("refl-" + m);
           const val = d[m] || "not linked";
@@ -1272,6 +1278,9 @@
             if (link) link.href = dcsUrlFromText(val);
           }
         }
+        const staticGroups = document.getElementById('nxdn-static');
+        staticGroups.textContent = d.nxdn_static ? 'Static TGs: ' + d.nxdn_static : '';
+        staticGroups.hidden = !d.nxdn_static;
       }
 
       // -------- Chart: Heatmap (30d) --------

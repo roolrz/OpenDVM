@@ -31,7 +31,8 @@ $expected = [
   'Callsign','Module','Id','Duplex','RXFrequency','TXFrequency',
   'Latitude','Longitude','Height','Location','Description','URL',
   'reflector1','reflector_module','Suffix','Startup','Options',
-  'Address','Password','Name', 'BmApiKey', 'DstarStartOnBoot', 'DmrStartOnBoot', 'YsfStartOnBoot'
+  'Address','Password','Name', 'BmApiKey', 'DstarStartOnBoot', 'DmrStartOnBoot', 'YsfStartOnBoot',
+  'NxdnStartOnBoot', 'NxdnId', 'NxdnRAN', 'NxdnStatic'
 ];
 
 // collect
@@ -42,8 +43,18 @@ foreach (['Latitude','Longitude'] as $k) { if ($data[$k] !== null) $data[$k] = s
 
 // validate
 $errors = [];
-foreach (['DstarStartOnBoot','DmrStartOnBoot','YsfStartOnBoot'] as $key) {
+foreach (['DstarStartOnBoot','DmrStartOnBoot','YsfStartOnBoot','NxdnStartOnBoot'] as $key) {
   if ($data[$key] !== null && !in_array($data[$key], ['0','1'], true)) $errors[] = "$key must be 0 or 1";
+}
+if ($data['NxdnId'] !== null && (!ctype_digit($data['NxdnId']) || (int)$data['NxdnId'] > 65535)) $errors[] = 'NXDN ID must be 0–65535';
+if ($data['NxdnRAN'] !== null && (!ctype_digit($data['NxdnRAN']) || (int)$data['NxdnRAN'] > 63)) $errors[] = 'NXDN RAN must be 0–63';
+if ($data['NxdnStatic'] !== null && $data['NxdnStatic'] !== '') {
+  $groups = array_map('trim', explode(',', $data['NxdnStatic']));
+  foreach ($groups as $group) {
+    if (!ctype_digit($group) || (int)$group < 1 || (int)$group > 65535) $errors[] = 'NXDN talkgroups must be 1–65535';
+  }
+  $data['NxdnStatic'] = implode(',', array_unique($groups));
+  if (strlen($data['NxdnStatic']) > 255) $errors[] = 'Too many NXDN static talkgroups';
 }
 if (empty($data['Callsign']) || !preg_match('/^[A-Za-z0-9\/]{3,}$/', $data['Callsign'])) $errors[] = 'Invalid callsign';
 foreach (['RXFrequency','TXFrequency'] as $hz) {
@@ -79,11 +90,18 @@ try {
   );
 
   $pdo->beginTransaction();
-  $current = $pdo->query('SELECT is_new, dstar_boot, dmr_boot, ysf_boot FROM config_inbox WHERE id=1 FOR UPDATE')->fetch();
+  $current = $pdo->query('SELECT is_new, dstar_boot, dmr_boot, ysf_boot, nxdn_boot, nxdn_id, nxdn_ran, nxdn_static FROM config_inbox WHERE id=1 FOR UPDATE')->fetch();
   if ($current && in_array($current['is_new'], ['GUI', 'APPLYING'], true)) {
     $pdo->rollBack();
     http_response_code(409);
     response(false, ['error' => 'A configuration change is already pending']);
+  }
+  $nxdnBoot = (int)($data['NxdnStartOnBoot'] ?? $current['nxdn_boot'] ?? 0);
+  $nxdnId = (int)($data['NxdnId'] ?? $current['nxdn_id'] ?? 0);
+  if ($nxdnBoot && $nxdnId < 1) {
+    $pdo->rollBack();
+    http_response_code(400);
+    response(false, ['error' => 'Set your NXDN ID (1–65535) before enabling NXDN']);
   }
 
   // kein CREATE TABLE, keine Initialzeile – das erledigt das Backend
@@ -94,13 +112,13 @@ try {
       location, description, url, reflector1, 
       ysf_suffix, ysf_startup, ysf_options,
       dmr_address, dmr_password, dmr_name,bm_api_key,
-      dstar_boot, dmr_boot, ysf_boot, apply_error, is_new
+      dstar_boot, dmr_boot, ysf_boot, nxdn_boot, nxdn_id, nxdn_ran, nxdn_static, apply_error, is_new
     ) VALUES (
       1, :callsign, :module, :dmr_id, :duplex, :rxfreq, :txfreq, :latitude, :longitude, :height,
       :location, :description, :url, :reflector1, 
       :ysf_suffix, :ysf_startup, :ysf_options,
       :dmr_address, :dmr_password, :dmr_name,:bm_api_key,
-      :dstar_boot, :dmr_boot, :ysf_boot, '', 'GUI'
+      :dstar_boot, :dmr_boot, :ysf_boot, :nxdn_boot, :nxdn_id, :nxdn_ran, :nxdn_static, '', 'GUI'
     )
     ON DUPLICATE KEY UPDATE
       callsign         = VALUES(callsign),
@@ -126,6 +144,10 @@ try {
       dstar_boot       = VALUES(dstar_boot),
       dmr_boot         = VALUES(dmr_boot),
       ysf_boot         = VALUES(ysf_boot),
+      nxdn_boot        = VALUES(nxdn_boot),
+      nxdn_id          = VALUES(nxdn_id),
+      nxdn_ran         = VALUES(nxdn_ran),
+      nxdn_static      = VALUES(nxdn_static),
       apply_error      = '',
       is_new           = 'GUI',
       updated_at       = CURRENT_TIMESTAMP
@@ -156,6 +178,10 @@ try {
     ':dstar_boot'       => (int)($data['DstarStartOnBoot'] ?? $current['dstar_boot'] ?? 1),
     ':dmr_boot'         => (int)($data['DmrStartOnBoot'] ?? $current['dmr_boot'] ?? 1),
     ':ysf_boot'         => (int)($data['YsfStartOnBoot'] ?? $current['ysf_boot'] ?? 1),
+    ':nxdn_boot'        => $nxdnBoot,
+    ':nxdn_id'          => $nxdnId,
+    ':nxdn_ran'         => (int)($data['NxdnRAN'] ?? $current['nxdn_ran'] ?? 1),
+    ':nxdn_static'      => $data['NxdnStatic'] ?? $current['nxdn_static'] ?? '',
   ]);
   $pdo->commit();
 

@@ -1,0 +1,18 @@
+[Unit]
+Description=NXDNGateway
+After=network-online.target mmdvmhost.service mosquitto.service
+Wants=network-online.target mosquitto.service
+
+[Service]
+Type=simple
+User=mmdvm
+Group=mmdvm
+WorkingDirectory=/var/log/mmdvm
+ExecStart=/usr/local/bin/NXDNGateway /etc/nxdngateway
+Restart=on-failure
+RestartSec=3
+StandardOutput=append:/var/log/mmdvm/NXDNGateway.log
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
