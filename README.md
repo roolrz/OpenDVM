@@ -321,8 +321,27 @@ or compilation of the four separately maintained gateway repositories.
 
 ## 🧱 System Setup & Maintenance
 
-- Database runs via Unix socket  
-- Installation scripts automatically create users and permissions  
+- Database runs via Unix socket
+- Installation scripts automatically create users and permissions
+
+### Update YSF reflectors
+
+Installation and updates download the current Pi-Star host list from
+`https://www.pistar.uk/downloads/YSF_Hosts.txt` to `/usr/local/etc/YSFHosts.txt`.
+To refresh it separately from an application update, run:
+
+```bash
+sudo ./update_ysf_hosts.sh
+# Or use the installed command from any directory:
+sudo /usr/local/sbin/opendvm-update-ysf-hosts
+```
+
+The updater requires more than 500 valid host records before replacing the file.
+It saves the previous file as `YSFHosts.txt.bak`, replaces the host list atomically,
+and restarts `ysfgateway.service` when the content changes. Downloads that fail or
+contain invalid data preserve the current file and backup. If reflector `46004`
+is present, its record is printed. Use `--no-restart` when another process manages
+the restart; the installation scripts use this option and restart services later.
 
 ---
 

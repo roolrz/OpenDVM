@@ -127,7 +127,7 @@ apt_install_batch() {
 base_packages() {
   apt_update_once
   apt_install_batch \
-    git sudo build-essential cmake libusb-1.0-0-dev \
+    git sudo util-linux build-essential cmake libusb-1.0-0-dev \
     libasound2-dev libfftw3-dev libgps-dev \
     libwxgtk3.2-dev logrotate curl ca-certificates \
     libmariadb-dev libmariadb-dev-compat mariadb-server \
@@ -237,8 +237,14 @@ install_dmrgateway() {
 install_hosts_and_tables() {
   log "Installing host lists..."
   if [[ -d hosts ]]; then
-    cp -a hosts/* /usr/local/etc/ || true
+    for host_file in hosts/*; do
+      [[ -f "$host_file" ]] || continue
+      case "${host_file##*/}" in YSFHosts.txt|YSF_Hosts.txt) continue ;; esac
+      cp -a "$host_file" /usr/local/etc/
+    done
   fi
+  install_file "update_ysf_hosts.sh" "/usr/local/sbin/opendvm-update-ysf-hosts" 755
+  /usr/local/sbin/opendvm-update-ysf-hosts --no-restart
   log "Fetching DMRIds.dat and RSSI.dat..."
   wget -q -O /usr/local/etc/DMRIds.dat https://database.radioid.net/static/user.csv
   # install from file because G4KLX's RSSI.dat is just an empty sample

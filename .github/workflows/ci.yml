@@ -49,6 +49,9 @@ jobs:
       - name: Check syntax and required PHP extensions
         run: python3 .github/scripts/check_syntax.py
 
+      - name: Test YSF host list updates
+        run: python3 .github/scripts/test_ysf_hosts.py
+
       - name: Compile status monitor and configuration service
         run: |
           (cd gui && ./compile.sh)
