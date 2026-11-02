@@ -37,6 +37,9 @@ struct siteData {
     std::string Address;
     std::string Password;
     std::string Name;
+    bool DstarStartOnBoot = true;
+    bool DmrStartOnBoot = true;
+    bool YsfStartOnBoot = true;
 };
 
 class handleDVconfig {
@@ -47,6 +50,7 @@ public:
     void readConfig();
 
     bool saveConfig();
+    std::string applyError;
 
     // Result object with all mapped fields
     siteData site;

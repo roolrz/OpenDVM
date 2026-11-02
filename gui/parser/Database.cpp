@@ -114,7 +114,12 @@ bool Database::createTableIfNeeded() noexcept {
         " is_new           VARCHAR(255)     NOT NULL DEFAULT 'IDLE',"
         " updated_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
         ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
-    return exec(q_cfg);
+    if (!exec(q_cfg)) return false;
+    return exec("ALTER TABLE config_inbox "
+                "ADD COLUMN IF NOT EXISTS dstar_boot TINYINT NOT NULL DEFAULT 1, "
+                "ADD COLUMN IF NOT EXISTS dmr_boot TINYINT NOT NULL DEFAULT 1, "
+                "ADD COLUMN IF NOT EXISTS ysf_boot TINYINT NOT NULL DEFAULT 1, "
+                "ADD COLUMN IF NOT EXISTS apply_error TEXT NULL");
 }
 
 // Ensure exactly one row exists (id=1). Insert defaults if empty using INSERT ... SET to avoid count mismatch
@@ -195,7 +200,11 @@ bool Database::writeSiteData(const siteData& s) noexcept {
     q += "location='"          + esc(s.Location)    + "',";
     q += "description='"       + esc(s.Description) + "',";
     q += "url='"               + esc(s.URL)         + "',";
-    q += "bm_api_key='12345',";
+    // Web-only credentials must survive backend restarts.
+    q += std::string("dstar_boot=") + (s.DstarStartOnBoot ? "1," : "0,");
+    q += std::string("dmr_boot=") + (s.DmrStartOnBoot ? "1," : "0,");
+    q += std::string("ysf_boot=") + (s.YsfStartOnBoot ? "1," : "0,");
+    q += "apply_error='',";
     q += "reflector1='"        + esc(s.reflector1)  + "',";
     q += "ysf_suffix='"        + esc(s.Suffix)      + "',";
     q += "ysf_startup='"       + esc(s.Startup)     + "',";
@@ -204,7 +213,7 @@ bool Database::writeSiteData(const siteData& s) noexcept {
     q += "dmr_password='"      + esc(s.Password)    + "',";
     q += "dmr_name='"          + esc(s.Name)        + "',";
     q += "is_new='BACKEND' ";
-    q += "WHERE id=1";
+    q += "WHERE id=1 AND is_new NOT IN ('GUI', 'APPLYING', 'ERROR')";
 
     if (!exec(q.c_str())) {
         std::fprintf(stderr, "[DB] writeSiteData UPDATE failed: %s\n", last_error_.c_str());
@@ -219,6 +228,7 @@ bool Database::readSiteData(siteData& s) noexcept {
         return false;
     }
 
+    if (!exec("START TRANSACTION")) return false;
     static const char* q =
         "SELECT "
         " callsign,"          // 0
@@ -240,12 +250,14 @@ bool Database::readSiteData(siteData& s) noexcept {
         " dmr_address,"       // 16
         " dmr_password,"      // 17
         " dmr_name,"          // 18
-        " is_new"             // 19
-        " FROM config_inbox WHERE id=1 LIMIT 1";
+        " is_new,"            // 19
+        " dstar_boot, dmr_boot, ysf_boot"
+        " FROM config_inbox WHERE id=1 LIMIT 1 FOR UPDATE";
 
     if (mysql_query(conn_, q) != 0) {
         last_error_ = mysql_error(conn_);
         std::fprintf(stderr, "[DB] readSiteData query failed: %s\n", last_error_.c_str());
+        exec("ROLLBACK");
         return false;
     }
 
@@ -253,6 +265,7 @@ bool Database::readSiteData(siteData& s) noexcept {
     if (!res) {
         last_error_ = mysql_error(conn_);
         std::fprintf(stderr, "[DB] readSiteData store_result failed: %s\n", last_error_.c_str());
+        exec("ROLLBACK");
         return false;
     }
 
@@ -260,6 +273,7 @@ bool Database::readSiteData(siteData& s) noexcept {
     if (!row) {
         mysql_free_result(res);
         last_error_ = "readSiteData: no row with id=1";
+        exec("ROLLBACK");
         std::fprintf(stderr, "[DB] %s\n", last_error_.c_str());
         return false;
     }
@@ -273,6 +287,7 @@ bool Database::readSiteData(siteData& s) noexcept {
     const std::string is_new = get(19);
     if (is_new.find("GUI") == std::string::npos) {
         mysql_free_result(res);
+        exec("ROLLBACK");
         //last_error_ = "readSiteData: is_new != GUI (current: '" + is_new + "')";
         //std::fprintf(stderr, "[DB] %s\n", last_error_.c_str());
         return false;
@@ -298,15 +313,28 @@ bool Database::readSiteData(siteData& s) noexcept {
     s.Address      = get(16);
     s.Password     = get(17);
     s.Name         = get(18);
+    s.DstarStartOnBoot = get(20) == "1";
+    s.DmrStartOnBoot = get(21) == "1";
+    s.YsfStartOnBoot = get(22) == "1";
 
     // Result vor dem nächsten Query freigeben
     mysql_free_result(res);
 
-    // Status auf IDLE setzen (Pflicht — sonst false)
-    if (!exec("UPDATE config_inbox SET is_new='IDLE' WHERE id=1")) {
-        std::fprintf(stderr, "[DB] readSiteData: set is_new=IDLE failed: %s\n", last_error_.c_str());
+    // Claim the request; the UI waits for completeApply before reporting success.
+    if (!exec("UPDATE config_inbox SET is_new='APPLYING', apply_error='' WHERE id=1")) {
+        std::fprintf(stderr, "[DB] readSiteData: set is_new=APPLYING failed: %s\n", last_error_.c_str());
+        exec("ROLLBACK");
         return false;
     }
+    return exec("COMMIT");
+}
 
-    return true;
+bool Database::completeApply(bool ok, const std::string& error) noexcept {
+    if (!ensure_conn()) return false;
+    std::string escaped(error.size() * 2 + 1, '\0');
+    auto length = mysql_real_escape_string(conn_, escaped.data(), error.c_str(), error.size());
+    escaped.resize(length);
+    std::string query = std::string("UPDATE config_inbox SET is_new='") + (ok ? "IDLE" : "ERROR")
+        + "', apply_error='" + escaped + "' WHERE id=1 AND is_new='APPLYING'";
+    return exec(query.c_str());
 }

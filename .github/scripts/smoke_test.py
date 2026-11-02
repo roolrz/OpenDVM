@@ -13,6 +13,7 @@ import urllib.parse
 import urllib.request
 
 from dashboard_regressions import check_dashboard_regressions
+from mode_control_regressions import PASSWORD, prepare_mode_controls, check_mode_controls
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -117,6 +118,7 @@ def main():
             destination.chmod(0o664)
         if "language=0" not in Path("/etc/ircddbgateway").read_text().splitlines():
             raise RuntimeError("D-Star announcements must default to English")
+        prepare_mode_controls(ROOT)
 
         # Keep MQTT traffic local even though the application uses a fixed hostname.
         with Path("/etc/hosts").open("a") as hosts:
@@ -185,18 +187,25 @@ def main():
             start("mmdvm-status", ["/usr/local/bin/mmdvm-status", str(logfile)], user="mmdvm")
 
         check_dashboard_regressions(api, sql, wait_for, logfile, restart_monitor)
+        check_mode_controls(api, request, wait_for, LOGS)
 
         # Exercise a valid form submission and its real database schema after stopping
-        # the consumer; restarting RF gateway units is outside this container test.
+        # the consumer; a queued request must survive restarting the daemon.
         stop("DVconfig")
         config = api("config_inbox")
-        config["ConfigPassword"] = "setuppassword"
+        config["ConfigPassword"] = PASSWORD
         config["Callsign"] = "DL5CI"
         result = json.loads(request("save_config.php", config))
         if result.get("ok") is not True or sql(
             "SELECT callsign FROM mmdvmdb.config_inbox WHERE id=1 AND is_new='GUI'"
         ) != "DL5CI":
             raise RuntimeError(f"Configuration submission failed: {result}")
+        request("save_config.php", config, 409)
+        request("mode_control.php", {"action": "stop", "mode": "dmr", "ConfigPassword": PASSWORD}, 409)
+        start("DVconfig", ["/usr/local/bin/DVconfig"], user="mmdvm")
+        wait_for("queued settings survive daemon restart and apply", lambda: sql(
+            "SELECT callsign FROM mmdvmdb.config_inbox WHERE id=1 AND is_new='IDLE'"
+        ) == "DL5CI")
         print("All smoke tests passed.", flush=True)
     finally:
         for _, process in reversed(PROCESSES):

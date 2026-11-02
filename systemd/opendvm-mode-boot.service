@@ -1,0 +1,8 @@
+[Unit]
+Description=Apply OpenDVM radio modes selected for boot
+Before=mmdvmhost.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/opendvm-mode-control apply-boot
+RemainAfterExit=yes

@@ -44,7 +44,8 @@ jobs:
           source ./install.sh
           base_packages
           apt-get install -y --no-install-recommends \
-            python3 nodejs php-cli shellcheck systemd mosquitto mosquitto-clients chromium
+            python3 nodejs php-cli shellcheck systemd mosquitto mosquitto-clients chromium \
+            chromium-driver python3-selenium
 
       - name: Check syntax and required PHP extensions
         run: python3 .github/scripts/check_syntax.py
@@ -54,6 +55,9 @@ jobs:
 
       - name: Test D-Star host list updates
         run: python3 .github/scripts/test_dstar_hosts.py
+
+      - name: Test mode boot and runtime controls
+        run: python3 .github/scripts/test_mode_control.py
 
       - name: Compile status monitor and configuration service
         run: |

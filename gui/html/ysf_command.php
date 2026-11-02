@@ -12,7 +12,8 @@ function response($ok, $payload = []) {
 }
 
 // später aus Datei/DB, jetzt hart codiert – wie in save_config.php
-$CONFIG_PASSWORD = 'setuppassword';
+require_once __DIR__ . '/config_auth.php';
+$CONFIG_PASSWORD = opendvm_config_password();
 
 // Nur POST akzeptieren
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {

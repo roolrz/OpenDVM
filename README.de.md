@@ -256,10 +256,19 @@ Die wichtigsten Einstellungen können im SETUP Fenster vorgenommen werden:
    * Duplex = 0 (nur auf 1 setzen, wenn du ein Repeater-Board nutzt)  
    * RX- und TX-Frequenzen einstellen. Für Hotspots benutze die gleiche RX und TX Frequenz, oder die DMR Netzwerkverbindung würde nicht funktionieren. Für Repeater benutze unterschiedliche RX und TX Frequenzen.  
    * Dein Brandmeister-Passwort eingeben (wie in *SelfCare* auf dem BM-Dashboard gesetzt).  
-   * Das Konfigurationspasswort eingeben (Standard: `setuppassword`). Eigenes Passwort kann in `save_config.php` (zu finden im Verzeichnis `./gui/html`, muss nach dem Editieren nach /var/www/html kopiert werden) gesetzt werden.  
-   * Auf **SAVE** klicken.
+   * Das Konfigurationspasswort eingeben (Standard: `setuppassword`). Ändern mit `sudoedit /etc/opendvm/config-password`. Das vorhandene Passwort aus `save_config.php` wird beim ersten Update übernommen und danach beibehalten.
+   * **Start on boot** für D-Star, DMR und YSF wählen und **Save & apply** anklicken.
 
    Wenn eine grüne Bestätigungsmeldung erscheint, wurde die Konfiguration erfolgreich gespeichert.
+
+**Start on boot** steuert den Gateway-Dienst und die RF-/Netzwerk-Freigabe in
+MMDVMHost. **Save & apply** speichert die Startauswahl und wendet sie sofort an.
+**Start** / **Stop** ändern nur den aktuellen Zustand; beim nächsten Boot gilt
+wieder die gespeicherte Auswahl. Jede Modusänderung startet den gemeinsamen
+MMDVMHost neu und unterbricht kurz alle Modi. Das Konfigurationspasswort wird für
+die Bedienung benötigt. YSF **CONNECT** / **DISCONNECT** steuert weiterhin die
+Reflektorverbindung. Einmal `sudo ./install_update.sh` ausführen, um die neuen
+Dienste und Berechtigungen zu installieren. Updates behalten die Startauswahl bei.
 
 Du kannst die erzeugten Konfigurationsdateien bei Bedarf weiterhin manuell bearbeiten – das ist jedoch in der Regel nicht notwendig. Die einzige Einstellung, die eventuell angepasst werden muss, ist die MMDVM-Modem-Baudrate. Standardmäßig ist sie auf 115200 Bd gesetzt, was für die meisten MMDVM-Boards geeignet ist. Einige Boards (z. B. Repeater Builder Boards) benötigen jedoch 460800 Bd – siehe dazu den Abschnitt [Modem] in /etc/MMDVMHost.ini.
 

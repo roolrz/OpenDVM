@@ -19,6 +19,7 @@ int main(){
     handleDVconfig dv;
     dv.readConfig();           // fills dv.site
     Database db;
+    db.completeApply(false, "Configuration service restarted during apply; review settings and save again");
     db.writeSiteData(dv.site); // push to DB (id=1)
 
     // Starte FM Funknetz Abfragen als Thread
@@ -33,7 +34,12 @@ int main(){
         if(newdata) {
             // handle data
             printf("new data from GUI\n");
-            dv.saveConfig();
+            try {
+                bool ok = dv.saveConfig();
+                db.completeApply(ok, ok ? "" : (dv.applyError.empty() ? "Writing gateway configuration failed" : dv.applyError));
+            } catch (const std::exception& error) {
+                db.completeApply(false, error.what());
+            }
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }

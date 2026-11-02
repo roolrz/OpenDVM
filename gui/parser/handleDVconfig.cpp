@@ -2,6 +2,9 @@
 #include <string>
 #include <iomanip>
 #include <sstream>
+#include <cstdio>
+#include <array>
+#include <nlohmann/json.hpp>
 #include "handleDVconfig.h"
 #include "helper.h"
 
@@ -41,10 +44,32 @@ void handleDVconfig::readConfig() {
     site.Address     = dmr_renderer.findValue("DMR Network 1", "Address");
     site.Password    = dmr_renderer.findValue("DMR Network 1", "Password");
     site.Name        = dmr_renderer.findValue("DMR Network 1", "Name");
+    if (FILE* pipe = popen("sudo -n /usr/local/sbin/opendvm-mode-control boot-status", "r")) {
+        std::string output;
+        std::array<char, 1024> buffer{};
+        while (fgets(buffer.data(), buffer.size(), pipe)) output += buffer.data();
+        int result = pclose(pipe);
+        try {
+            auto data = nlohmann::json::parse(output);
+            if (result == 0) {
+                site.DstarStartOnBoot = data.at("dstar").get<bool>();
+                site.DmrStartOnBoot = data.at("dmr").get<bool>();
+                site.YsfStartOnBoot = data.at("ysf").get<bool>();
+            }
+        } catch (const std::exception& error) {
+            std::fprintf(stderr, "[modes] cannot read boot settings: %s\n", error.what());
+        }
+    }
 }
 
 // schreibt 'site' in die 4 Config-Dateien
 bool handleDVconfig::saveConfig() {
+    applyError.clear();
+    // Runtime controls may have changed Enable flags since this daemon started.
+    host_renderer = renderConfigFile("/etc/MMDVMHost.ini", false);
+    ircddb_renderer = renderConfigFile("/etc/ircddbgateway", false);
+    dmr_renderer = renderConfigFile("/etc/dmrgateway", false);
+    ysf_renderer = renderConfigFile("/etc/ysfgateway", false);
     // 1) Fatal: alle Dateien müssen existieren/lesbar sein
     if (!host_renderer.isLoaded())   { std::fprintf(stderr, "[saveConfig] missing/unreadable: /etc/MMDVMHost.ini\n"); return false; }
     if (!ircddb_renderer.isLoaded()) { std::fprintf(stderr, "[saveConfig] missing/unreadable: /etc/ircddbgateway\n"); return false; }
@@ -135,24 +160,35 @@ bool handleDVconfig::saveConfig() {
     if (chg_host) {
         printf("save mmdvmhost config data and restart service\n");
         if (!host_renderer.saveConfigFile()) { std::fprintf(stderr, "[saveConfig] write failed: /etc/MMDVMHost.ini\n"); return false; }
-        if (!helper::restartUnit("mmdvmhost.service")) { std::fprintf(stderr, "[saveConfig] restart failed: mmdvmhost.service\n"); return false; }
     }
     if (chg_ircddb) {
         printf("save ircddb config data and restart service\n");
         if (!ircddb_renderer.saveConfigFile()) { std::fprintf(stderr, "[saveConfig] write failed: /etc/ircddbgateway\n"); return false; }
-        if (!helper::restartUnit("ircddbgateway.service")) { std::fprintf(stderr, "[saveConfig] restart failed: ircddbgateway.service\n"); return false; }
     }
     if (chg_ysf) {
         printf("save ysf config data and restart service\n");
         if (!ysf_renderer.saveConfigFile()) { std::fprintf(stderr, "[saveConfig] write failed: /etc/ysfgateway\n"); return false; }
-        if (!helper::restartUnit("ysfgateway.service")) { std::fprintf(stderr, "[saveConfig] restart failed: ysfgateway.service\n"); return false; }
     }
     if (chg_dmr) {
         printf("save dmr config data and restart service\n");
         if (!dmr_renderer.saveConfigFile()) { std::fprintf(stderr, "[saveConfig] write failed: /etc/dmrgateway\n"); return false; }
-        if (!helper::restartUnit("dmrgateway.service")) { std::fprintf(stderr, "[saveConfig] restart failed: dmrgateway.service\n"); return false; }
     }
 
-    // Nothing changed anywhere is OK; function still returns true.
-    return true;
+    // Apply RF flags, gateway state and boot policy together, after all files
+    // have been written. The controller queues one shared-modem restart.
+    const std::string command = std::string("sudo -n /usr/local/sbin/opendvm-mode-control configure ")
+        + (site.DstarStartOnBoot ? "1 " : "0 ")
+        + (site.DmrStartOnBoot ? "1 " : "0 ")
+        + (site.YsfStartOnBoot ? "1" : "0");
+    FILE* pipe = popen(command.c_str(), "r");
+    if (!pipe) { applyError = "Mode controller could not start"; return false; }
+    std::string output;
+    std::array<char, 1024> buffer{};
+    while (fgets(buffer.data(), buffer.size(), pipe)) output += buffer.data();
+    int result = pclose(pipe);
+    if (result != 0) {
+        try { applyError = nlohmann::json::parse(output).value("error", "Service changes failed"); }
+        catch (...) { applyError = "Service changes failed"; }
+    }
+    return result == 0;
 }

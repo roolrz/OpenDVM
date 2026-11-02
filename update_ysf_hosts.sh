@@ -83,7 +83,7 @@ chmod 644 "$TMP"
 mv -f -- "$TMP" "$DEST"
 
 if (( RESTART )); then
-  systemctl restart ysfgateway.service || die "Host list updated, but restarting ysfgateway failed"
+  systemctl try-restart ysfgateway.service || die "Host list updated, but restarting ysfgateway failed"
 fi
 echo "YSFHosts updated: $DEST ($COUNT records)"
 show_china_reflector

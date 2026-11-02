@@ -99,7 +99,7 @@ class HostUpdateTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.backup.read_bytes(), VALID)
         self.assertEqual(self.dest.read_bytes(), WITH_CHINA)
-        self.assertEqual(self.restarts.read_text().splitlines(), ["restart ysfgateway.service"])
+        self.assertEqual(self.restarts.read_text().splitlines(), ["try-restart ysfgateway.service"])
         self.assert_no_temporary_files()
 
     def test_unchanged_preserves_backup_and_skips_restart(self):

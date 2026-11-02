@@ -54,6 +54,11 @@
       color:var(--muted); border-radius:999px; padding:2px 8px; font-size:12px}
     .footer-note{color:var(--muted); font-size:12px; text-align:center; padding:12px}
     .error{color:var(--err); font-size:13px; margin-top:6px}
+    .mode-controls{display:flex; flex-wrap:wrap; align-items:center; gap:12px; margin-bottom:16px}
+    .mode-controls label{display:flex; align-items:center; gap:8px; color:var(--fg)}
+    .mode-controls input{width:auto; accent-color:var(--accent)}
+    .mode-controls output{font-size:13px; color:var(--muted)}
+    button:disabled{opacity:.5; cursor:wait}
     .ok{color:var(--ok); font-size:13px; margin-top:6px}
     .center{grid-column:1 / -1}
     .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
@@ -260,6 +265,12 @@
       <!-- TILE: D-Star -->
       <section class="tile dstar">
         <h2>D-Star</h2>
+        <div class="mode-controls" data-mode="dstar">
+          <label><input type="checkbox" id="DstarStartOnBoot" name="DstarStartOnBoot" disabled />Start on boot</label>
+          <output id="dstarState" aria-live="polite">Loading…</output>
+          <button type="button" data-action="start" disabled>Start</button>
+          <button type="button" data-action="stop" disabled>Stop</button>
+        </div>
         <div class="row">
           <div class="field">
             <label for="reflector1">reflector1</label>
@@ -276,6 +287,12 @@
       <!-- TILE: YSF -->
       <section class="tile ysf">
         <h2>YSF</h2>
+        <div class="mode-controls" data-mode="ysf">
+          <label><input type="checkbox" id="YsfStartOnBoot" name="YsfStartOnBoot" disabled />Start on boot</label>
+          <output id="ysfState" aria-live="polite">Loading…</output>
+          <button type="button" data-action="start" disabled>Start</button>
+          <button type="button" data-action="stop" disabled>Stop</button>
+        </div>
         <div class="row">
           <div class="field">
             <label for="Suffix">Suffix</label>
@@ -313,6 +330,12 @@
       <!-- TILE: DMR -->
       <section class="tile center dmr">
         <h2>DMR</h2>
+        <div class="mode-controls" data-mode="dmr">
+          <label><input type="checkbox" id="DmrStartOnBoot" name="DmrStartOnBoot" disabled />Start on boot</label>
+          <output id="dmrState" aria-live="polite">Loading…</output>
+          <button type="button" data-action="start" disabled>Start</button>
+          <button type="button" data-action="stop" disabled>Stop</button>
+        </div>
         <div class="row">
           <div class="field">
             <label for="Address">Address</label>
@@ -371,11 +394,14 @@
           <!-- Rechts: Status + Buttons -->
           <div class="actions-right">
             <span id="formState" class="badge">ready</span>
-            <button class="primary" id="saveBtn" type="submit">💾 Save</button>
+            <button class="primary" id="saveBtn" type="submit" disabled>💾 Save &amp; apply</button>
           </div>
         </div>
 
         <div id="msg" class="hint"></div>
+        <p class="hint">Save &amp; apply sets each mode's boot policy and starts or stops its radio and gateway now.
+          Start / Stop only changes the current session. Applying mode changes restarts the shared modem
+          and briefly interrupts all modes.</p>
       </section>
 
     </form>
@@ -472,6 +498,82 @@
     const msg  = document.getElementById('msg');
     const snack= document.getElementById('snack');
     const state= document.getElementById('formState');
+    const saveBtn = document.getElementById('saveBtn');
+    let saving = false;
+    let modeBusy = false;
+    let modesReady = false;
+    let configReady = false;
+    const bootFields = ['DstarStartOnBoot', 'DmrStartOnBoot', 'YsfStartOnBoot'];
+
+    function updateControls(){
+      saveBtn.disabled = saving || modeBusy || !modesReady || !configReady;
+      document.querySelectorAll('.mode-controls button').forEach(button => {
+        button.disabled = saving || modeBusy || !modesReady;
+      });
+      bootFields.forEach(id => { document.getElementById(id).disabled = saving || !modesReady; });
+    }
+
+    async function refreshModes(){
+      try {
+        const response = await fetch('mode_control.php', {cache:'no-store'});
+        const data = await response.json();
+        if (!response.ok || !data.ok) throw new Error(data.error || 'Mode status unavailable');
+        document.querySelectorAll('.mode-controls').forEach(panel => {
+          const mode = panel.dataset.mode;
+          const current = data.modes[mode];
+          const input = panel.querySelector('input');
+          if (!input.dataset.loaded) {
+            input.checked = current.start_on_boot;
+            input.dataset.loaded = '1';
+          }
+          document.getElementById(mode + 'State').textContent = current.running ? 'Running'
+            : (!current.rf_enabled && current.gateway_state === 'inactive' ? 'Stopped'
+            : `Radio ${current.rf_enabled ? 'on' : 'off'} · gateway ${current.gateway_state} · modem ${current.modem_state}`);
+        });
+        modesReady = true;
+      } catch (error) {
+        document.querySelectorAll('.mode-controls output').forEach(output => {
+          output.textContent = 'Status unavailable: ' + error.message;
+        });
+        modesReady = false;
+      }
+      updateControls();
+    }
+
+    document.querySelectorAll('.mode-controls button').forEach(button => {
+      button.addEventListener('click', async () => {
+        const password = document.getElementById('ConfigPassword').value;
+        if (!password) { showSnack('Enter Config Password below first'); return; }
+        modeBusy = true;
+        updateControls();
+        try {
+          const response = await fetch('mode_control.php', {
+            method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+            body: new URLSearchParams({mode:button.closest('[data-mode]').dataset.mode,
+              action:button.dataset.action, ConfigPassword:password})
+          });
+          const data = await response.json();
+          if (!response.ok || !data.ok) throw new Error(data.error || 'Service operation failed');
+          showSnack('Service change requested; boot setting unchanged', true);
+        } catch (error) { showSnack(error.message); }
+        finally { modeBusy = false; await refreshModes(); }
+      });
+    });
+    refreshModes();
+    setInterval(refreshModes, 3000);
+
+    async function waitForApply(){
+      const deadline = Date.now() + 90000;
+      while (Date.now() < deadline){
+        await new Promise(resolve => setTimeout(resolve, 500));
+        const response = await fetch('api.php?q=config_inbox', {cache:'no-store'});
+        if (!response.ok) throw new Error('Cannot read configuration apply status');
+        const data = await response.json();
+        if (data.is_new === 'ERROR') throw new Error(data.apply_error || 'Applying configuration failed');
+        if (data.is_new === 'IDLE') return;
+      }
+      throw new Error('Configuration is still pending. Check the configuration service before saving again.');
+    }
 
     function showSnack(text, ok=false){
       snack.textContent = text;
@@ -541,6 +643,7 @@
 
     function serializeForm(form){
       const fd = new FormData(form);
+      bootFields.forEach(id => fd.set(id, document.getElementById(id).checked ? '1' : '0'));
       // Normalize coordinates before sending
       fd.set('Latitude', normDec(fd.get('Latitude')));
       fd.set('Longitude', normDec(fd.get('Longitude')));
@@ -579,6 +682,7 @@
 
     form.addEventListener('submit', async (e)=>{
       e.preventDefault();
+      if (saving || modeBusy || !modesReady || !configReady) return;
       if (!validate()){
         state.textContent = 'error';
         state.style.color = '#e5484d';
@@ -589,6 +693,8 @@
       el.value = el.value.toLocaleUpperCase('de-DE').trim();
 
       state.textContent = 'saving…';
+      saving = true;
+      updateControls();
       try{
         const body = serializeForm(form);
         const r = await fetch('save_config.php', {
@@ -599,10 +705,12 @@
         const data = await r.json().catch(()=>null);
 
         if (r.ok && data && data.ok){
-          state.textContent = 'saved';
+          state.textContent = 'applying…';
+          await waitForApply();
+          state.textContent = 'applied';
           state.style.color = '#5cff89';
-          msg.innerHTML = `<span class="ok">OK – server accepted configuration data.</span>`;
-          showSnack('Configuration saved', true);
+          msg.textContent = 'Configuration saved. Service changes requested; connection status updates above.';
+          showSnack('Configuration applied', true);
           try { localStorage.setItem('opendvm:cfg_saved', String(Date.now())); } catch {}
           try {
             if (window.opener && !window.opener.closed) {
@@ -610,25 +718,21 @@
             }
           } catch (_) {}
 
-          //window.close(); // kann geblockt werden
-          setTimeout(() => { 
-            if (!document.hidden) {
-              window.close();
-              location.href = 'index.html'; 
-            }
-          }, 1500);    
         } else {
           const errTxt = (data && data.error) ? data.error : (r.status+' '+r.statusText);
           state.textContent = 'error';
           state.style.color = '#e5484d';
-          msg.innerHTML = `<span class="error">Save failed: ${errTxt}</span>`;
+          msg.textContent = 'Save failed: ' + errTxt;
           showSnack('Save error');
         }
       } catch(ex){
         state.textContent = 'error';
         state.style.color = '#e5484d';
-        msg.innerHTML = `<span class="error">${ex}</span>`;
-        showSnack('Network error');
+        msg.textContent = ex.message;
+        showSnack('Save / apply failed');
+      } finally {
+        saving = false;
+        await refreshModes();
       }
     });
 
@@ -749,6 +853,8 @@
         // Nach dem Befüllen Default-Flags neu anwenden
         if (window.__updateFreqHint) window.__updateFreqHint();
         if (window.__applyDefaultFlags) window.__applyDefaultFlags();
+        configReady = true;
+        updateControls();
         } catch (e) {
           console.error('preload failed', e);
         }

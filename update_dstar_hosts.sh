@@ -81,7 +81,7 @@ for file in "${FILES[@]}"; do
   CHANGED=1
 done
 if (( CHANGED && RESTART )); then
-  systemctl restart ircddbgateway.service || die "Host lists updated, but restarting ircddbgateway failed"
+  systemctl try-restart ircddbgateway.service || die "Host lists updated, but restarting ircddbgateway failed"
 fi
 
 # Per-user lists are also read before the system lists. Preserve custom entries,
