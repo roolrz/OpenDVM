@@ -58,6 +58,11 @@
     .mode-controls label{display:flex; align-items:center; gap:8px; color:var(--fg)}
     .mode-controls input{width:auto; accent-color:var(--accent)}
     .mode-controls output{font-size:13px; color:var(--muted)}
+    .bm-manager{margin-top:20px; border-top:1px solid var(--border); padding-top:16px}
+    .bm-manager h3{font-size:15px; margin:0 0 12px}
+    .bm-manager [hidden]{display:none}
+    .bm-buttons{display:flex; flex-wrap:wrap; gap:10px; margin:12px 0}
+    .bm-result{font-size:13px; overflow-wrap:anywhere}
     button:disabled{opacity:.5; cursor:wait}
     .ok{color:var(--ok); font-size:13px; margin-top:6px}
     .center{grid-column:1 / -1}
@@ -357,21 +362,48 @@
           </div>
           <div class="field"></div>
         </div>
-        <!-- 
-        <div class="row">
+        <div class="bm-manager" id="bmManager">
+          <h3>BrandMeister static talkgroups</h3>
+          <p class="hint">Uses the saved DMRGateway device ID, including ESSID. Save &amp; apply station changes first.
+            BM changes apply immediately without restarting services. Enter Config Password below to use these controls.</p>
           <div class="field">
             <label for="BmApiKey">BrandMeister API Key</label>
             <div class="pw-inline">
-              <input id="BmApiKey" name="BmApiKey" type="password" class="mono" placeholder="paste API key" autocomplete="off" />
+              <input id="BmApiKey" type="password" class="mono" placeholder="Paste API v2 key to save or replace" autocomplete="off" maxlength="16384" />
               <button type="button" id="toggleBmKey" class="pw-toggle" aria-controls="BmApiKey" aria-pressed="false">
                 Show
               </button>
             </div>
-            <div class="hint">Bearer key from BrandMeister SelfCare → API Keys</div>
+            <div class="hint" id="bmKeyState">API key status loading…</div>
+            <a class="hint" href="https://brandmeister.network/?page=profile" target="_blank" rel="noopener">BrandMeister Profile Settings → API Keys</a>
           </div>
-          <div class="field"></div>
+          <div class="bm-buttons">
+            <button type="button" id="bmSaveKey">Save key &amp; load</button>
+            <button type="button" id="bmClearKey">Remove saved key</button>
+            <button type="button" id="bmLoad">Load from BM</button>
+          </div>
+          <p id="bmDevice" class="hint">No BM configuration loaded.</p>
+          <div class="row">
+            <div class="field" id="bmSlot0Row" hidden>
+              <label for="BmStatic0">Simplex static TGs (BM slot 0)</label>
+              <input id="BmStatic0" class="mono" placeholder="91,46001" disabled />
+            </div>
+            <div class="field" id="bmSlot1Row">
+              <label for="BmStatic1">TS1 static TGs</label>
+              <input id="BmStatic1" class="mono" placeholder="46020" disabled />
+            </div>
+            <div class="field" id="bmSlot2Row">
+              <label for="BmStatic2">TS2 static TGs</label>
+              <input id="BmStatic2" class="mono" placeholder="46001" disabled />
+            </div>
+          </div>
+          <p class="hint">Separate TGs with commas. Empty a slot to remove its static bindings, then apply.
+            Refresh from BM before editing; dynamic TGs are shown on the dashboard separately.</p>
+          <div class="bm-buttons">
+            <button type="button" id="bmApply" class="primary" disabled>Apply static TGs to BM</button>
+          </div>
+          <div id="bmResult" class="bm-result" role="status" aria-live="polite"></div>
         </div>
-         -->
       </section>
 
       <!-- TILE: ACTIONS -->
@@ -536,11 +568,13 @@
     const bootFields = ['DstarStartOnBoot', 'DmrStartOnBoot', 'YsfStartOnBoot', 'NxdnStartOnBoot'];
 
     function updateControls(){
-      saveBtn.disabled = saving || modeBusy || !modesReady || !configReady;
+      const bmBusy = Boolean(window.__bmBusy);
+      saveBtn.disabled = saving || modeBusy || bmBusy || !modesReady || !configReady;
       document.querySelectorAll('.mode-controls button').forEach(button => {
-        button.disabled = saving || modeBusy || !modesReady;
+        button.disabled = saving || modeBusy || bmBusy || !modesReady;
       });
       bootFields.forEach(id => { document.getElementById(id).disabled = saving || !modesReady; });
+      if (window.__updateBmControls) window.__updateBmControls(saving || modeBusy);
     }
 
     async function refreshModes(){
@@ -604,6 +638,98 @@
       }
       throw new Error('Configuration is still pending. Check the configuration service before saving again.');
     }
+
+    (function bmManager(){
+      let loaded = null;
+      let busy = false;
+      const result = document.getElementById('bmResult');
+      const inputs = [0,1,2].map(slot => document.getElementById('BmStatic' + slot));
+      const buttons = ['bmSaveKey','bmClearKey','bmLoad','bmApply'].map(id => document.getElementById(id));
+      window.__updateBmControls = (otherBusy) => {
+        buttons.forEach(button => { button.disabled = busy || otherBusy || (button.id === 'bmApply' && !loaded); });
+        inputs.forEach(input => { input.disabled = busy || otherBusy || !loaded; });
+      };
+      function keyState(configured){
+        document.getElementById('bmKeyState').textContent = configured
+          ? 'Key saved on device. Leave blank to keep it; the saved key is never returned to the browser.'
+          : 'No API key saved. Create a BM API v2 key and save it here.';
+      }
+      window.__setBmKeyState = keyState;
+      function showSnapshot(data){
+        loaded = data;
+        inputs.forEach((input, slot) => {
+          input.value = data.static['TS' + slot].join(',');
+          document.getElementById('bmSlot' + slot + 'Row').hidden =
+            (data.device.duplex ? slot === 0 : slot !== 0) && !data.static['TS' + slot].length;
+        });
+        document.getElementById('bmDevice').textContent = 'BM device: ' + data.device.id
+          + (data.device.duplex ? ' · Duplex (TS1 / TS2)' : ' · Simplex (BM slot 0)');
+      }
+      function desired(){
+        const groups = {};
+        inputs.forEach((input, slot) => {
+          const text = input.value.trim();
+          groups['TS' + slot] = text === '' ? [] : [...new Set(text.split(',').map(value => {
+            value = value.trim();
+            if (!/^[0-9]+$/.test(value) || Number(value) < 1 || Number(value) > 16777215)
+              throw new Error('TG IDs must be integers from 1 to 16777215');
+            return Number(value);
+          }))];
+        });
+        return groups;
+      }
+      async function run(action){
+        if (busy || saving || modeBusy) return;
+        const password = document.getElementById('ConfigPassword').value;
+        if (!password) { result.textContent = 'Enter Config Password below first.'; return; }
+        const params = new URLSearchParams({action, ConfigPassword:password});
+        try {
+          if (action === 'apply') {
+            if (!loaded) throw new Error('Load from BM before editing');
+            params.set('revision', loaded.revision);
+            params.set('static', JSON.stringify(desired()));
+          }
+          if (action === 'save_key') params.set('api_key', document.getElementById('BmApiKey').value.trim());
+        } catch (error) { result.textContent = error.message; return; }
+        busy = true;
+        window.__bmBusy = true;
+        updateControls();
+        result.textContent = action === 'apply' ? 'Applying and verifying static TGs on BM…' : 'Contacting BM…';
+        try {
+          const response = await fetch('bm_control.php', {method:'POST',
+            headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:params});
+          const data = await response.json();
+          if (!response.ok || !data.ok) throw new Error(data.error || 'BM operation failed');
+          keyState(data.key_configured);
+          if (action === 'clear_key') {
+            loaded = null;
+            inputs.forEach(input => { input.value = ''; });
+            document.getElementById('bmDevice').textContent = 'No BM configuration loaded.';
+          } else showSnapshot(data);
+          document.getElementById('BmApiKey').value = '';
+          result.textContent = action === 'apply' ? 'BM confirmed the static TG bindings. Services were not restarted.'
+            : action === 'clear_key' ? 'Saved key removed from this device.' : 'Current static TG bindings loaded from BM.';
+          try { localStorage.setItem('opendvm:bm_changed', String(Date.now())); } catch {}
+        } catch (error) {
+          loaded = null;
+          result.textContent = error.message + ' Load from BM to check the current state before retrying.';
+        } finally {
+          busy = false;
+          window.__bmBusy = false;
+          updateControls();
+        }
+      }
+      document.getElementById('bmSaveKey').addEventListener('click', () => run('save_key'));
+      document.getElementById('bmClearKey').addEventListener('click', () => run('clear_key'));
+      document.getElementById('bmLoad').addEventListener('click', () => run('load'));
+      document.getElementById('bmApply').addEventListener('click', () => run('apply'));
+      window.__invalidateBm = () => { loaded = null; updateControls(); };
+      ['Id','Duplex'].forEach(id => document.getElementById(id).addEventListener('change', () => {
+        window.__invalidateBm();
+        result.textContent = 'Device settings changed. Save & apply station settings, then load from BM again.';
+      }));
+      updateControls();
+    })();
 
     function showSnack(text, ok=false){
       snack.textContent = text;
@@ -712,7 +838,7 @@
 
     form.addEventListener('submit', async (e)=>{
       e.preventDefault();
-      if (saving || modeBusy || !modesReady || !configReady) return;
+      if (saving || modeBusy || window.__bmBusy || !modesReady || !configReady) return;
       if (!validate()){
         state.textContent = 'error';
         state.style.color = '#e5484d';
@@ -737,6 +863,7 @@
         if (r.ok && data && data.ok){
           state.textContent = 'applying…';
           await waitForApply();
+          if (window.__invalidateBm) window.__invalidateBm();
           state.textContent = 'applied';
           state.style.color = '#5cff89';
           msg.textContent = 'Configuration saved. Service changes requested; connection status updates above.';
@@ -878,7 +1005,7 @@
         setVal('Address',       pick('Address'));
         setVal('Password',      pick('Password'));
         setVal('Name',          pick('Name'));
-        setVal('BmApiKey',      pick('BmApiKey'));  // setVal kann fehlende Elemente handeln
+        if (window.__setBmKeyState) window.__setBmKeyState(Boolean(Number(pick('BmApiKeyConfigured'))));
         setVal('NxdnId',        pick('NxdnId'));
         setVal('NxdnRAN',       pick('NxdnRAN'));
         setVal('NxdnStatic',    pick('NxdnStatic'));

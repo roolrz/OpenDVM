@@ -31,7 +31,7 @@ $expected = [
   'Callsign','Module','Id','Duplex','RXFrequency','TXFrequency',
   'Latitude','Longitude','Height','Location','Description','URL',
   'reflector1','reflector_module','Suffix','Startup','Options',
-  'Address','Password','Name', 'BmApiKey', 'DstarStartOnBoot', 'DmrStartOnBoot', 'YsfStartOnBoot',
+  'Address','Password','Name', 'DstarStartOnBoot', 'DmrStartOnBoot', 'YsfStartOnBoot',
   'NxdnStartOnBoot', 'NxdnId', 'NxdnRAN', 'NxdnStatic'
 ];
 
@@ -111,13 +111,13 @@ try {
       id, callsign, module, dmr_id, duplex, rxfreq, txfreq, latitude, longitude, height,
       location, description, url, reflector1, 
       ysf_suffix, ysf_startup, ysf_options,
-      dmr_address, dmr_password, dmr_name,bm_api_key,
+      dmr_address, dmr_password, dmr_name,
       dstar_boot, dmr_boot, ysf_boot, nxdn_boot, nxdn_id, nxdn_ran, nxdn_static, apply_error, is_new
     ) VALUES (
       1, :callsign, :module, :dmr_id, :duplex, :rxfreq, :txfreq, :latitude, :longitude, :height,
       :location, :description, :url, :reflector1, 
       :ysf_suffix, :ysf_startup, :ysf_options,
-      :dmr_address, :dmr_password, :dmr_name,:bm_api_key,
+      :dmr_address, :dmr_password, :dmr_name,
       :dstar_boot, :dmr_boot, :ysf_boot, :nxdn_boot, :nxdn_id, :nxdn_ran, :nxdn_static, '', 'GUI'
     )
     ON DUPLICATE KEY UPDATE
@@ -140,7 +140,6 @@ try {
       dmr_address      = VALUES(dmr_address),
       dmr_password     = VALUES(dmr_password),
       dmr_name         = VALUES(dmr_name),
-      bm_api_key       = VALUES(bm_api_key),
       dstar_boot       = VALUES(dstar_boot),
       dmr_boot         = VALUES(dmr_boot),
       ysf_boot         = VALUES(ysf_boot),
@@ -174,7 +173,6 @@ try {
     ':dmr_address'      => $data['Address'] ?: null,
     ':dmr_password'     => $data['Password'] ?: null,
     ':dmr_name'         => $data['Name'] ?: null,
-    ':bm_api_key'       => ($data['BmApiKey'] ?? '') ?: null,
     ':dstar_boot'       => (int)($data['DstarStartOnBoot'] ?? $current['dstar_boot'] ?? 1),
     ':dmr_boot'         => (int)($data['DmrStartOnBoot'] ?? $current['dmr_boot'] ?? 1),
     ':ysf_boot'         => (int)($data['YsfStartOnBoot'] ?? $current['ysf_boot'] ?? 1),

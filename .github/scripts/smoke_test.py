@@ -15,6 +15,7 @@ import urllib.request
 from dashboard_regressions import check_dashboard_regressions
 from mode_control_regressions import PASSWORD, prepare_mode_controls, check_mode_controls
 from nxdn_regressions import check_nxdn_regressions
+from bm_regressions import check_bm_regressions
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -97,6 +98,9 @@ def main():
     if os.geteuid() != 0 or not Path("/.dockerenv").exists():
         raise RuntimeError("Run this test as root inside a disposable Docker container.")
     LOGS.mkdir(exist_ok=True)
+    # The HTTPS BM fixture is local even when the runner provides proxy variables.
+    os.environ['NO_PROXY'] = '127.0.0.1,localhost,api.brandmeister.network'
+    os.environ['no_proxy'] = os.environ['NO_PROXY']
     try:
         subprocess.run(["install", "-d", "-o", "mysql", "-g", "mysql", "/run/mysqld"], check=True)
         start("mariadb", ["mariadbd", "--user=mysql", "--skip-networking"])
@@ -193,6 +197,7 @@ def main():
         check_dashboard_regressions(api, sql, wait_for, logfile, restart_monitor)
         check_mode_controls(api, request, wait_for, LOGS)
         check_nxdn_regressions(api, wait_for, logfile, start, stop, LOGS)
+        check_bm_regressions(api, request, sql, wait_for, start, stop, LOGS)
 
         # Exercise a valid form submission and its real database schema after stopping
         # the consumer; a queued request must survive restarting the daemon.

@@ -87,6 +87,7 @@ bool handleDVconfig::saveConfig() {
 
     // 2) Werte setzen
     bool chg_host, chg_ircddb, chg_ysf, chg_dmr;
+    const bool dmrIdChanged = host_renderer.findValue("General", "Id") != site.Id;
 
     // /etc/MMDVMHost.ini
     chg_host =  host_renderer.setValue("Callsign",    site.Callsign,   "General");
@@ -171,11 +172,11 @@ bool handleDVconfig::saveConfig() {
     // Default ist enable=0
     chg_dmr |= dmr_renderer.setValue("Enabled",     "1",                "DMR Network 1");
     
-    chg_dmr |= dmr_renderer.setValue("Id",     site.Id,     "XLX Network");
-    chg_dmr |= dmr_renderer.setValue("Id",     site.Id,     "DMR Network 1");
-    chg_dmr |= dmr_renderer.setValue("Id",     site.Id,     "DMR Network 2");
-    chg_dmr |= dmr_renderer.setValue("Id",     site.Id,     "DMR Network 5");
-    chg_dmr |= dmr_renderer.setValue("Id",     site.Id,     "DMR Network Custom");
+    // Keep explicit network IDs/ESSIDs when saving unrelated settings.
+    for (const auto& section : {"XLX Network", "DMR Network 1", "DMR Network 2", "DMR Network 5", "DMR Network Custom"}) {
+        if (dmrIdChanged || dmr_renderer.findValue(section, "Id").empty())
+            chg_dmr |= dmr_renderer.setValue("Id", site.Id, section);
+    }
 
     // 3) Persist only if changed; restart corresponding service after successful save
     if (chg_host) {

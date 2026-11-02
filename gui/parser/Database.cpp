@@ -159,7 +159,7 @@ bool Database::ensureSingleRow() noexcept {
             "location=NULL,"
             "description=NULL,"
             "url=NULL,"
-            "bm_api_key='12345',"
+            "bm_api_key=NULL,"
             "reflector1=NULL,"
             "ysf_suffix=NULL,"
             "ysf_startup=NULL,"
