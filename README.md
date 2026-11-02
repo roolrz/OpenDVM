@@ -343,6 +343,34 @@ contain invalid data preserve the current file and backup. If reflector `46004`
 is present, its record is printed. Use `--no-restart` when another process manages
 the restart; the installation scripts use this option and restart services later.
 
+### Update D-Star reflectors and reduce startup DNS delays
+
+ircDDBGateway loads the enabled host tables before connecting to its startup
+reflector. Its bundled lists contain old hostnames, resolved synchronously one
+by one; obsolete domains can delay the first connection by minutes.
+
+Installation and updates now refresh `DExtra_Hosts.txt`, `DPlus_Hosts.txt` and
+`DCS_Hosts.txt` in `/usr/share/ircddbgateway/` from Pi-Star. Run a standalone
+refresh without upgrading system packages or restarting the other gateways:
+
+```bash
+sudo ./update_dstar_hosts.sh
+# Or, after installation/update, from any directory:
+sudo /usr/local/sbin/opendvm-update-dstar-hosts
+```
+
+All three downloads must pass validation before any active file is replaced.
+Each table must contain at least 100 records for its protocol, and every server
+address must be a numeric IPv4 address to avoid per-record DNS lookups at gateway
+startup. D-Plus repeater calls, alphanumeric reflector IDs, XLX aliases and `L`
+lock markers are supported. Changed files are backed up as `*.bak` and replaced
+atomically; the gateway restarts once after the refresh. `--no-restart` defers
+that restart, and `--dest-dir` supports a different compiled data directory.
+
+The updater preserves existing protocol settings. Per-user host files in the
+`mmdvm` account's home directory are also loaded by the gateway; the script
+reports those files for inspection and preserves their custom entries.
+
 ---
 
 ## 🎯 Credits & License

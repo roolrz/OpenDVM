@@ -320,6 +320,30 @@ Datei atomar eingesetzt und `ysfgateway.service` neu gestartet. Fehlerhafte
 Downloads lassen die aktuelle Liste und Sicherung unverändert. `--no-restart`
 unterdrückt den Neustart; Installation und Update starten die Dienste später.
 
+### D-Star-Listen aktualisieren und DNS-Wartezeiten reduzieren
+
+ircDDBGateway lädt die aktivierten Host-Dateien vor dem ersten Verbindungsaufbau.
+Alte Hostnamen werden dabei nacheinander aufgelöst und können den Start um
+Minuten verzögern. Installation und Updates laden jetzt aktuelle Pi-Star-Listen
+für DExtra, DPlus und DCS nach `/usr/share/ircddbgateway/`.
+
+```bash
+sudo ./update_dstar_hosts.sh
+# Nach Installation/Update auch aus jedem anderen Verzeichnis:
+sudo /usr/local/sbin/opendvm-update-dstar-hosts
+```
+
+Alle drei Downloads werden vor dem Austausch geprüft. Jede Liste muss mindestens
+100 Einträge ihres Protokolls enthalten; alle Adressen müssen numerische
+IPv4-Adressen sein. Das vermeidet DNS-Abfragen pro Eintrag beim Gateway-Start.
+Geänderte Dateien werden als `*.bak` gesichert und einzeln atomar ersetzt;
+anschließend wird nur ircDDBGateway neu gestartet. `--no-restart` unterdrückt den
+Neustart, `--dest-dir` erlaubt ein anderes Datenverzeichnis.
+
+Protokolleinstellungen und benutzerspezifische Listen bleiben erhalten. Das
+Skript meldet zusätzliche Host-Dateien im Home-Verzeichnis von `mmdvm`, damit
+auch dort veraltete Hostnamen geprüft werden können.
+
 ---
 
 ## 🎯 Danksagung & Lizenz
