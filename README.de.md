@@ -26,10 +26,10 @@ Die aktuelle Version unterstützt **D-Star, DMR und YSF (C4FM)** auf **MMDVM-Boa
 
 Folgende G4KLX-Repositories werden verwendet:
 
-- [MMDVMHost](https://github.com/dj0abr/MMDVMHost)  das ist eine modifizierte Version von MMDVMHost um D-Star Simplex Betrieb zu unterstützen
-- [ircDDBGateway](https://github.com/g4klx/ircDDBGateway)  
-- [DMRGateway](https://github.com/g4klx/DMRGateway)  
-- [YSFClient](https://github.com/g4klx/YSFClients) *(als Gateway genutzt)*  
+- [MMDVMHost](https://github.com/roolrz/MMDVMHost)  das ist eine modifizierte Version von MMDVMHost um D-Star Simplex Betrieb zu unterstützen
+- [ircDDBGateway](https://github.com/roolrz/ircDDBGateway)
+- [DMRGateway](https://github.com/roolrz/DMRGateway)
+- [YSFClient](https://github.com/roolrz/YSFClients) *(als Gateway genutzt)*
 
 Die **gesamte Installation** erfolgt automatisiert über **fünf Shell-Skripte**, die alle Komponenten korrekt einrichten.  
 
@@ -143,7 +143,7 @@ Zuerst das Repository von GitHub herunterladen:
 ```bash
 sudo apt update
 sudo apt install git -y
-git clone https://github.com/dj0abr/OpenDVM.git
+git clone https://github.com/roolrz/OpenDVM.git
 cd OpenDVM
 ```
 
@@ -208,7 +208,7 @@ Wenn OpenDVM bereits installiert ist, ist ein Update in der Regel der beste Weg,
 Zuerst das aktuelle Repository von GitHub herunterladen:
 
 ```bash
-git clone https://github.com/dj0abr/OpenDVM.git
+git clone https://github.com/roolrz/OpenDVM.git
 cd OpenDVM
 ```
 

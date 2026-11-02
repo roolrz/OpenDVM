@@ -26,10 +26,10 @@ The current version supports **D-Star, DMR and YSF (C4FM) on MMDVM Boards** (USB
 
 It uses the following G4KLX repositories:
 
-- [MMDVMHost](https://github.com/dj0abr/MMDVMHost)  this is a modified version of the original MMDVMHost to support simplex D-Star operation
-- [ircDDBGateway](https://github.com/g4klx/ircDDBGateway)  
-- [DMRGateway](https://github.com/g4klx/DMRGateway)  
-- [YSFClient](https://github.com/g4klx/YSFClients) *(used as a gateway)*  
+- [MMDVMHost](https://github.com/roolrz/MMDVMHost)  this is a modified version of the original MMDVMHost to support simplex D-Star operation
+- [ircDDBGateway](https://github.com/roolrz/ircDDBGateway)
+- [DMRGateway](https://github.com/roolrz/DMRGateway)
+- [YSFClient](https://github.com/roolrz/YSFClients) *(used as a gateway)*
 
 The **entire installation** is automated through **shell scripts** that correctly set up all components.  
 
@@ -141,7 +141,7 @@ First, download this repository from GitHub:
 ```bash
 sudo apt update
 sudo apt install git -y
-git clone https://github.com/dj0abr/OpenDVM.git
+git clone https://github.com/roolrz/OpenDVM.git
 cd OpenDVM
 ```
 
@@ -206,7 +206,7 @@ If OpenDVM is already installed, performing an update is usually the best way to
 First, download the latest repository from GitHub:
 
    ```bash
-   git clone https://github.com/dj0abr/OpenDVM.git
+   git clone https://github.com/roolrz/OpenDVM.git
    cd OpenDVM
    ```
 

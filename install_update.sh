@@ -96,6 +96,7 @@ build_from_git() {
 
   if [[ -d "$repo_dir/.git" ]]; then
     log "Updating $name in $repo_dir"
+    git -C "$repo_dir" remote set-url origin "$repo"
     git -C "$repo_dir" fetch --depth=1 origin
     git -C "$repo_dir" reset --hard FETCH_HEAD
     git -C "$repo_dir" clean -fdx

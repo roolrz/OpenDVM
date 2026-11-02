@@ -93,6 +93,7 @@ build_from_git() {
 
   if [[ -d "$repo_dir/.git" ]]; then
     log "Updating $name in $repo_dir"
+    git -C "$repo_dir" remote set-url origin "$repo"
     git -C "$repo_dir" fetch --depth=1 origin
     git -C "$repo_dir" reset --hard FETCH_HEAD
     git -C "$repo_dir" clean -fdx
@@ -180,7 +181,7 @@ check_serial_symlink() {
 install_mmdvmhost() {
   log "Installing MMDVMHost..."
   build_from_git \
-    "https://github.com/dj0abr/MMDVMHost.git" \
+    "https://github.com/roolrz/MMDVMHost.git" \
     "MMDVMHost" "" \
     "install -m 755 MMDVMHost/MMDVMHost /usr/local/bin/"
   install_file "configs/MMDVMHost.ini.sample" "/etc/MMDVMHost.ini" 664 "root:mmdvm"
@@ -192,7 +193,7 @@ install_ysfgateway() {
   log "Installing YSFGateway..."
   log "Installing YSFGateway..."
   build_from_git \
-    "https://github.com/dj0abr/YSFClients.git" \
+    "https://github.com/roolrz/YSFClients.git" \
     "YSFClients" "" \
     "install -m 755 YSFClients/YSFGateway/YSFGateway /usr/local/bin/"
   install_file "configs/ysfgateway.sample" "/etc/ysfgateway" 664 "root:mmdvm"
@@ -206,7 +207,7 @@ install_ircddbgateway() {
   log "Installing ircDDBGateway..."
   local J; J=$(jobs_detect)
   build_from_git \
-    "https://github.com/dj0abr/ircDDBGateway.git" \
+    "https://github.com/roolrz/ircDDBGateway.git" \
     "ircDDBGateway" "" \
     "make -C ircDDBGateway install; install -m 755 /usr/bin/ircddbgatewayd /usr/local/bin/ || true"
   install_file "configs/ircddbgateway.sample" "/etc/ircddbgateway" 664 "root:mmdvm"
@@ -223,7 +224,7 @@ install_dmrgateway() {
   log "Installing DMRGateway..."
   local J; J=$(jobs_detect)
   build_from_git \
-    "https://github.com/dj0abr/DMRGateway.git" \
+    "https://github.com/roolrz/DMRGateway.git" \
     "DMRGateway" "" \
     "make -C DMRGateway install"
   install_file "configs/dmrgateway.sample" "/etc/dmrgateway" 664 "root:mmdvm"
