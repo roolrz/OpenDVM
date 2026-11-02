@@ -2,6 +2,8 @@
 
 **Current Version 1.1**
 
+[![Debian CI](https://github.com/roolrz/OpenDVM/actions/workflows/ci.yml/badge.svg)](https://github.com/roolrz/OpenDVM/actions/workflows/ci.yml)
+
 tested on:
 
 MMDVM-USB Boards:
@@ -294,6 +296,20 @@ Completely static – no PHP framework required, just a small `api.php` for JSON
 - Works on any webserver (nginx, Apache, lighttpd)
 
 ---
+
+## CI
+
+GitHub Actions runs on every push and pull request, and can also be started manually.
+All checks run inside `debian:stable-slim`, following the latest Debian stable release.
+
+- Install the application's dependencies using `base_packages` from `install.sh`.
+- Check Bash/ShellCheck errors, PHP syntax and extensions, and JavaScript syntax (including inline scripts).
+- Compile `mmdvm-status` and `DVconfig` using the production build commands.
+- Start MariaDB, a local MQTT broker, both backends and the PHP HTTP server; verify D-Star/YSF/DMR log ingestion, MQTT ingestion, dashboard APIs, authentication rejection and configuration submission.
+
+The smoke test changes `/etc` and starts services only inside the disposable CI container.
+It does not exercise MMDVM hardware, systemd service restarts, external radio networks,
+or compilation of the four separately maintained gateway repositories.
 
 ## 🧱 System Setup & Maintenance
 

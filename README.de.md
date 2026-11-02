@@ -2,6 +2,8 @@
 
 **Aktuelle Version 1.1**
 
+[![Debian CI](https://github.com/roolrz/OpenDVM/actions/workflows/ci.yml/badge.svg)](https://github.com/roolrz/OpenDVM/actions/workflows/ci.yml)
+
 getestet auf:
 
 MMDVM-USB Boards:

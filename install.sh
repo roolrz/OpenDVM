@@ -127,10 +127,11 @@ apt_install_batch() {
 base_packages() {
   apt_update_once
   apt_install_batch \
-    git build-essential cmake libusb-1.0-0-dev \
+    git sudo build-essential cmake libusb-1.0-0-dev \
     libasound2-dev libfftw3-dev libgps-dev \
     libwxgtk3.2-dev logrotate curl ca-certificates \
     libmariadb-dev libmariadb-dev-compat mariadb-server \
+    libmosquitto-dev nlohmann-json3-dev \
     apache2 php libapache2-mod-php php-mysql wget php-curl
   apt-get autoremove -y || true
   apt-get clean || true
@@ -339,4 +340,6 @@ main() {
   echo "Reboot the System now." 
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

@@ -1,0 +1,61 @@
+name: Debian CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  debian:
+    name: Syntax, build and smoke tests (Debian stable)
+    runs-on: ubuntu-latest
+    container: debian:stable-slim
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      TZ: UTC
+    steps:
+      - name: Bootstrap Debian
+        run: |
+          cat /etc/os-release
+          # Services are started explicitly by the smoke test, without systemd.
+          printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d
+          chmod +x /usr/sbin/policy-rc.d
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates git
+
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install application and test dependencies
+        run: |
+          source ./install.sh
+          base_packages
+          apt-get install -y --no-install-recommends \
+            python3 nodejs php-cli shellcheck systemd mosquitto mosquitto-clients
+
+      - name: Check syntax and required PHP extensions
+        run: python3 .github/scripts/check_syntax.py
+
+      - name: Compile status monitor and configuration service
+        run: |
+          (cd gui && ./compile.sh)
+          make -C gui/parser -j2
+          test -x /usr/local/bin/mmdvm-status
+          test -x /usr/local/bin/DVconfig
+          ldd /usr/local/bin/mmdvm-status /usr/local/bin/DVconfig
+
+      - name: Smoke test database, backends and HTTP API
+        run: python3 .github/scripts/smoke_test.py
