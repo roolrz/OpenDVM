@@ -15,6 +15,7 @@ import urllib.request
 from dashboard_regressions import check_dashboard_regressions
 from mode_control_regressions import PASSWORD, prepare_mode_controls, check_mode_controls
 from nxdn_regressions import check_nxdn_regressions
+from bm_regressions import check_bm_regressions
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -193,6 +194,7 @@ def main():
         check_dashboard_regressions(api, sql, wait_for, logfile, restart_monitor)
         check_mode_controls(api, request, wait_for, LOGS)
         check_nxdn_regressions(api, wait_for, logfile, start, stop, LOGS)
+        check_bm_regressions(api, request, sql, wait_for, start, stop, LOGS)
 
         # Exercise a valid form submission and its real database schema after stopping
         # the consumer; a queued request must survive restarting the daemon.

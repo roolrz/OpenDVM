@@ -278,6 +278,20 @@ Gateway aus `roolrz/NXDNClients` und den benötigten lokalen Mosquitto-Broker.
 Bestehende Gateway-Einstellungen bleiben erhalten. Logs:
 `/var/log/mmdvm/NXDNGateway.log` und `journalctl -u nxdngateway`.
 
+Im DMR-Bereich erlaubt **BrandMeister static talkgroups** das direkte Bearbeiten
+der statischen TGs. Einen API-v2-Key in BM **Profile Settings → API Keys** erstellen,
+das OpenDVM-Konfigurationspasswort eingeben und **Save key & load** anklicken.
+Der gespeicherte Key wird nicht an den Browser zurückgegeben und bleibt bei
+normalen Konfigurationsänderungen und Dienstneustarts erhalten.
+
+Mit **Load from BM** die aktuellen Listen laden, TS1/TS2 bearbeiten und
+**Apply static TGs to BM** anklicken. Simplex-Hotspots verwenden BM-Slot 0.
+Eine leere Liste entfernt deren statische Bindungen. Verwendet wird die gespeicherte
+ID aus `[DMR Network 1]` in `/etc/dmrgateway`, einschließlich ESSID. Die Dienste
+werden für BM-Änderungen nicht neu gestartet. Erfolg wird erst nach Rücklesen
+der BM-Konfiguration gemeldet. Bei Fehlern oder extern geänderten Listen zuerst
+neu laden; einzelne Änderungen können bereits übernommen worden sein.
+
 Die NXDN-Serverliste und RadioID-Tabelle werden bei Installation und Update
 automatisch erneuert. Separat: `sudo /usr/local/sbin/opendvm-update-nxdn-hosts`.
 Beide Downloads werden vor dem Ersetzen geprüft und als `.bak` gesichert.

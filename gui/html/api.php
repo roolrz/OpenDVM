@@ -104,69 +104,7 @@ function prefix_to_country($call) {
   return null;
 }
 
-  function bm_api_get_raw(string $endpoint, string $token, int $timeout=8, bool $allow_non2xx=false) {
-    $ch = curl_init("https://api.brandmeister.network{$endpoint}");
-    curl_setopt_array($ch, [
-      CURLOPT_RETURNTRANSFER => true,
-      CURLOPT_HTTPHEADER => ["Authorization: Bearer ".trim($token), "Accept: application/json"],
-      CURLOPT_TIMEOUT => $timeout,
-      CURLOPT_SSL_VERIFYPEER => true,
-    ]);
-    $body = curl_exec($ch);
-    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $err  = curl_error($ch);
-    curl_close($ch);
-    if ($body === false) throw new RuntimeException("BM cURL: $err");
-    if (!$allow_non2xx && ($code < 200 || $code >= 300)) {
-      throw new RuntimeException("BM HTTP $code");
-    }
-    return ['code'=>$code, 'json'=>json_decode($body, true)];
-  }
-
-function bm_api_get(string $endpoint, string $token, bool $debug = false): array {
-  if (!function_exists('curl_init')) {
-    throw new RuntimeException('php-curl fehlt (installiere php-curl)');
-  }
-
-  $url = "https://api.brandmeister.network{$endpoint}";
-  $ch = curl_init($url);
-  curl_setopt_array($ch, [
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_HTTPHEADER => [
-      "Authorization: Bearer " . trim($token),
-      "Accept: application/json",
-    ],
-    CURLOPT_TIMEOUT => 10,
-    CURLOPT_SSL_VERIFYPEER => true,
-  ]);
-
-  $body = curl_exec($ch);
-  $err  = curl_error($ch);
-  $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-  curl_close($ch);
-
-  if ($body === false) {
-    throw new RuntimeException("BrandMeister API cURL error: {$err}");
-  }
-
-  // Bei Nicht-2xx: komplette Fehlantwort nach oben reichen (damit wir sie sehen)
-  if ($code < 200 || $code >= 300) {
-    if ($debug) {
-      return ['ok' => false, 'code' => $code, 'raw' => $body];
-    }
-    throw new RuntimeException("BrandMeister API HTTP {$code}");
-  }
-
-  $json = json_decode($body, true);
-  if ($json === null && json_last_error() !== JSON_ERROR_NONE) {
-    if ($debug) {
-      return ['ok' => false, 'code' => $code, 'raw' => $body];
-    }
-    throw new RuntimeException("BrandMeister API: ungültiges JSON");
-  }
-
-  return ['ok' => true, 'code' => $code, 'data' => $json];
-}
+require_once __DIR__ . '/bm_client.php';
 
 try {
   /**
@@ -535,7 +473,7 @@ try {
         dmr_address    AS Address,
         dmr_password   AS Password,
         dmr_name       AS Name,
-        bm_api_key     AS BmApiKey,
+        (bm_api_key IS NOT NULL AND bm_api_key NOT IN ('', '12345')) AS BmApiKeyConfigured,
         dstar_boot     AS DstarStartOnBoot,
         dmr_boot       AS DmrStartOnBoot,
         ysf_boot       AS YsfStartOnBoot,
@@ -575,88 +513,17 @@ try {
    get Brandmeister TGs
    ========================= */
   if ($q === 'bm_tgs') {
-    // ID/Key laden wie gehabt
-    $deviceId = isset($_GET['id']) ? trim($_GET['id']) : null;
-    if ($deviceId === null) {
-      $row = $pdo->query("SELECT dmr_id, bm_api_key FROM config_inbox WHERE id=1 LIMIT 1")->fetch(PDO::FETCH_ASSOC);
-      $deviceId = $row['dmr_id'] ?? null;
-      $apiKey   = $row['bm_api_key'] ?? null;
-    } else {
-      $row = $pdo->query("SELECT bm_api_key FROM config_inbox WHERE id=1 LIMIT 1")->fetch(PDO::FETCH_ASSOC);
-      $apiKey = $row['bm_api_key'] ?? null;
+    try {
+      $context = bm_context($pdo);
+      $client = new BmClient($context);
+      $snapshot = $client->snapshot();
+      try { $dynamic = bm_groups($client->dynamicPairs()); }
+      catch (BmError) { $dynamic = ['TS0' => [], 'TS1' => [], 'TS2' => []]; }
+      echo json_encode([...$snapshot, 'dynamic' => $dynamic, 'updated_at' => date('Y-m-d H:i:s')], JSON_UNESCAPED_UNICODE);
+    } catch (BmError $error) {
+      http_response_code($error->httpStatus);
+      echo json_encode(['error' => $error->getMessage(), 'error_code' => $error->errorCode]);
     }
-
-    // zum reinen Anzeigen der TGs wird der API Key nicht benötigt
-    // Falls ich später mal auch andere Dinge machen will, muss der harte apikey
-    // mit dem Echten ersetzt werden. Dazu in setup.html das auskommentierte 
-    // Eingabefeld wieder aktivieren
-
-    // Simulierter API kay
-    $apiKey = "12345";
-
-    // ➜ Fehlender Key: klare 400-Antwort
-    if (!$deviceId || !$apiKey) {
-      http_response_code(400);
-      echo json_encode([
-        'error' => 'missing device id or api key',
-        'error_code' => 'NO_API_KEY'
-      ], JSON_UNESCAPED_UNICODE);
-      exit;
-    }
-
-    // 1) STATIC mit allow_non2xx=true holen und Codes prüfen
-    $stat = bm_api_get_raw("/v2/device/{$deviceId}/talkgroup", $apiKey, 8, true);
-
-    // ➜ Ungültiger Key: 401/403 sauber melden
-    if (in_array((int)$stat['code'], [401, 403], true)) {
-      http_response_code(401);
-      echo json_encode([
-        'error' => 'invalid or missing BrandMeister API key',
-        'error_code' => 'BAD_API_KEY'
-      ], JSON_UNESCAPED_UNICODE);
-      exit;
-    }
-
-    $staticArr = is_array($stat['json']) ? $stat['json'] : [];
-
-    // 2) DYNAMIC (Fehler sind optional; nur nutzen, wenn 2xx)
-    $dyn = bm_api_get_raw("/v2/device/{$deviceId}/talkgroup/dynamic", $apiKey, 6, true);
-    $dynamicArr = ($dyn['code'] >= 200 && $dyn['code'] < 300 && is_array($dyn['json'])) ? $dyn['json'] : [];
-
-    // 3) Meta (optional)
-    $meta = bm_api_get_raw("/v2/device/{$deviceId}", $apiKey, 4, true);
-    $dev  = is_array($meta['json']) ? $meta['json'] : [];
-
-    // Normalisieren -> {slot, tg}
-    $norm = function($arr) {
-      $out = [];
-      foreach ((array)$arr as $x) {
-        $slot = (int)($x['slot'] ?? $x['timeslot'] ?? 0);
-        $tg   = (int)($x['talkgroup'] ?? $x['tg'] ?? $x['id'] ?? 0);
-        if ($tg > 0) $out[] = ['slot' => ($slot === 1 ? 1 : 2), 'tg' => $tg];
-      }
-      return $out;
-    };
-
-    $out = [
-      'device' => ['id'=>$deviceId, 'name'=>$dev['name']??null, 'type'=>$dev['type']??null],
-      'static'  => ['TS1'=>[], 'TS2'=>[]],
-      'dynamic' => ['TS1'=>[], 'TS2'=>[]],
-      'updated_at' => date('Y-m-d H:i:s'),
-    ];
-
-    foreach ($norm($staticArr) as $x) { $out['static'][$x['slot']===1?'TS1':'TS2'][] = $x['tg']; }
-    foreach ($norm($dynamicArr) as $x) { $out['dynamic'][$x['slot']===1?'TS1':'TS2'][] = $x['tg']; }
-
-    foreach (['static','dynamic'] as $k) {
-      foreach (['TS1','TS2'] as $ts) {
-        $v = array_values(array_unique(array_map('intval', $out[$k][$ts])));
-        sort($v, SORT_NUMERIC);
-        $out[$k][$ts] = $v;
-      }
-    }
-
-    echo json_encode($out, JSON_UNESCAPED_UNICODE);
     exit;
   }
 

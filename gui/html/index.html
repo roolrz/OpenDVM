@@ -1918,16 +1918,18 @@
         const el = document.getElementById("dmr-tgs");
         if (!el) return;
 
+        const s0 = d?.static?.TS0 || [];
         const s1 = d?.static?.TS1 || [];
         const s2 = d?.static?.TS2 || [];
+        const y0 = d?.dynamic?.TS0 || [];
         const y1 = d?.dynamic?.TS1 || [];
         const y2 = d?.dynamic?.TS2 || [];
 
         // Hilfsfunktion: "TSx: 26280, 26282"
         const rowText = (label, arr) => (arr.length ? `${label} ${arr.join(", ")}` : null);
 
-        const staticParts  = [rowText("TS1:", s1), rowText("TS2:", s2)].filter(Boolean);
-        const dynamicParts = [rowText("TS1:", y1), rowText("TS2:", y2)].filter(Boolean);
+        const staticParts  = [rowText("Simplex:", s0), rowText("TS1:", s1), rowText("TS2:", s2)].filter(Boolean);
+        const dynamicParts = [rowText("Simplex:", y0), rowText("TS1:", y1), rowText("TS2:", y2)].filter(Boolean);
 
         const chunks = [];
         if (staticParts.length) chunks.push(`Sta. ${staticParts.join("  •  ")}`);
@@ -1979,6 +1981,10 @@
         }
       }
 
+      window.addEventListener('storage', event => {
+        if (event.key === 'opendvm:bm_changed') loadBmTgs();
+      });
+
       // Bei Resize (mobil/Rotation): Karte neu layouten
       window.addEventListener("resize", () => {
         if (map) setTimeout(() => map.invalidateSize(), 100);
@@ -2012,7 +2018,7 @@
       setInterval(loadActivityByModeSplit, 60000);
       setInterval(updateAge, 1000);
       setInterval(loadReflector, 2000);
-      setInterval(loadBmTgs, 5000);
+      setInterval(loadBmTgs, 30000);
       setInterval(loadHeatmap30d, 60000);
       setInterval(loadYsfOptions, 5000);
     </script>

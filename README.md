@@ -293,6 +293,30 @@ at the revision tested by CI, recorded in `scripts/install_nxdn.sh`. Existing
 MQTT broker, so the installer includes and enables Mosquitto. Gateway diagnostics
 are in `/var/log/mmdvm/NXDNGateway.log` and `journalctl -u nxdngateway`.
 
+The DMR card also includes a **BrandMeister static talkgroups** manager. Create
+an API v2 key in [BM Profile Settings → API Keys](https://brandmeister.network/?page=profile),
+enter the OpenDVM Config Password, paste the key and click **Save key & load**.
+The key stays on the device; the settings API returns only whether a key is
+configured. A blank key field preserves it. **Remove saved key** deletes the
+device's copy without revoking the key at BM. Station saves and backend restarts
+preserve the key.
+
+Click **Load from BM**, edit the comma-separated static TG lists for **TS1** and
+**TS2**, then click **Apply static TGs to BM**. Simplex hotspots use a single
+**BM slot 0** list. Emptying a list removes its static bindings. The manager uses
+the saved `DMR Network 1` ID in `/etc/dmrgateway`, including any ESSID; the target
+device ID is shown above the lists. Save station ID/duplex changes before loading
+BM settings. Unrelated station saves preserve explicitly configured network IDs.
+
+These changes go directly to BM and do not restart MMDVMHost or DMRGateway.
+The manager applies only differences, adds before removing, and reads the lists
+back before reporting success. If BM rejects a request, cannot confirm the result
+or has changed since the lists were loaded, refresh before retrying. A failed
+multi-group operation may have applied some earlier changes; BM has no atomic
+multi-group replacement endpoint in this integration. The API key's account must
+have permission to manage the selected device. Dynamic TGs remain separate on
+the dashboard.
+
 You can still manually edit the generated configuration files if needed — although this is rarely necessary. The only setting you might need to adjust is the MMDVM modem baud rate. By default, it’s set to 115200 Bd, which works for most MMDVM boards. However, some boards (for example, Repeater Builder boards) may require 460800 Bd — see the [Modem] section in /etc/MMDVMHost.ini.
 
 D-Star announcements default to English (`language=0` in `/etc/ircddbgateway`).
