@@ -300,8 +300,25 @@ Komplett statisch – kein PHP-Framework erforderlich, nur eine kleine `api.php`
 
 ## 🧱 Systemeinrichtung & Wartung
 
-- Datenbank läuft über Unix-Socket  
-- Installationsskripte erstellen Benutzer und Rechte automatisch  
+- Datenbank läuft über Unix-Socket
+- Installationsskripte erstellen Benutzer und Rechte automatisch
+
+### YSF-Reflektoren aktualisieren
+
+Installation und Updates laden die aktuelle Pi-Star-Liste nach
+`/usr/local/etc/YSFHosts.txt`. Eine separate Aktualisierung ist möglich mit:
+
+```bash
+sudo ./update_ysf_hosts.sh
+# Nach der Installation auch aus jedem anderen Verzeichnis:
+sudo /usr/local/sbin/opendvm-update-ysf-hosts
+```
+
+Das Skript prüft das Format und verlangt mehr als 500 gültige Einträge. Bei
+Änderungen wird die bisherige Datei als `YSFHosts.txt.bak` gesichert, die neue
+Datei atomar eingesetzt und `ysfgateway.service` neu gestartet. Fehlerhafte
+Downloads lassen die aktuelle Liste und Sicherung unverändert. `--no-restart`
+unterdrückt den Neustart; Installation und Update starten die Dienste später.
 
 ---
 
