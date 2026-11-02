@@ -197,11 +197,24 @@ try {
           "SELECT id, mode, callsign, dgid, slot, source, active, ber, duration,             
            DATE_FORMAT(updated_at, '%Y-%m-%d %H:%i:%s') AS updated_at
        FROM status
-       WHERE id = 1"
+       ORDER BY active DESC, (id = 1) DESC, updated_at DESC, id DESC
+       LIMIT 1"
     )->fetch();
 
     if ($row) {
       $row['country_code'] = prefix_to_country($row['callsign'] ?? null);
+      $row['active'] = (bool)$row['active'];
+      $slots = $pdo->query("
+        SELECT slot, callsign, dgid, source, active, ber, duration,
+               DATE_FORMAT(updated_at, '%Y-%m-%d %H:%i:%s') AS updated_at
+        FROM status WHERE id IN (2,3) ORDER BY slot
+      ")->fetchAll();
+      foreach ($slots as &$slot) {
+        $slot['active'] = (bool)$slot['active'];
+        $slot['country_code'] = prefix_to_country($slot['callsign'] ?? null);
+      }
+      unset($slot);
+      $row['slots'] = $slots;
     }
 
     echo json_encode($row ?: [], JSON_UNESCAPED_UNICODE);

@@ -12,6 +12,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from dashboard_regressions import check_dashboard_regressions
+
 
 ROOT = Path(__file__).resolve().parents[2]
 LOGS = Path("/tmp/opendvm-ci")
@@ -29,6 +31,13 @@ def start(name, command, user=None):
         output.close()
     PROCESSES.append((name, process))
     return process
+
+
+def stop(name):
+    entry = next(entry for entry in PROCESSES if entry[0] == name)
+    entry[1].terminate()
+    entry[1].wait(timeout=10)
+    PROCESSES.remove(entry)
 
 
 def wait_for(description, check, timeout=20):
@@ -106,6 +115,8 @@ def main():
             shutil.copyfile(ROOT / "configs" / sample, destination)
             shutil.chown(destination, group="mmdvm")
             destination.chmod(0o664)
+        if "language=0" not in Path("/etc/ircddbgateway").read_text().splitlines():
+            raise RuntimeError("D-Star announcements must default to English")
 
         # Keep MQTT traffic local even though the application uses a fixed hostname.
         with Path("/etc/hosts").open("a") as hosts:
@@ -169,11 +180,15 @@ def main():
             if payload.get("ok") is not False:
                 raise RuntimeError(f"{endpoint} did not reject invalid credentials")
 
+        def restart_monitor():
+            stop("mmdvm-status")
+            start("mmdvm-status", ["/usr/local/bin/mmdvm-status", str(logfile)], user="mmdvm")
+
+        check_dashboard_regressions(api, sql, wait_for, logfile, restart_monitor)
+
         # Exercise a valid form submission and its real database schema after stopping
         # the consumer; restarting RF gateway units is outside this container test.
-        config_process = next(process for name, process in PROCESSES if name == "DVconfig")
-        config_process.terminate()
-        config_process.wait(timeout=10)
+        stop("DVconfig")
         config = api("config_inbox")
         config["ConfigPassword"] = "setuppassword"
         config["Callsign"] = "DL5CI"

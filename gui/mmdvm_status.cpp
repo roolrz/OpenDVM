@@ -350,9 +350,7 @@ public:
         rx.timestamp      = std::regex(R"(^\s*[A-Z]:\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\.(\d{3}))");
 
         rx.modeSet = std::regex(R"(Mode\s+set\s+to\s+([A-Za-z0-9\-]+))");
-        rx.dstar_slowdata_text = std::regex(R"(D-Star,\s+network\s+slow\s+data\s+text\s*=\s*\"([^\"]+)\")");
-
-        rx.ysf_linked_to    = std::regex(R"(Linked\s+to\s+([^\r\n]+))");
+        rx.ysf_linked_to    = std::regex(R"(Linked\s+to\s+([^\r\n\"]+))");
         rx.dmr_master_login = std::regex(R"((\S+),\s+Logged\s+into\s+the\s+master\s+successfully)");
 
         rx.dstar_slowdata_text   = std::regex(R"(D-Star,\s+network\s+slow\s+data\s+text\s*=\s*\"([^\"]+)\")");
@@ -369,11 +367,12 @@ public:
             if (std::regex_search(line, m, rx.modeSet)) {
                 std::string newMode = m[1].str();
 
-                // Wenn Idle → offenes QSO erzwingen wir hier zu beenden
-                if (newMode == "Idle") {
-                    if (auto pend = forcedEndIfOpen(line, ts, "Idle")) {
-                        // erst das erzwungene Ende ausgeben lassen
-                        pending_.push_back(*pend);
+                // Idle closes every channel; changing protocol closes incompatible sessions.
+                for (auto it = open_.begin(); it != open_.end();) {
+                    int channel = it++->first;
+                    if (newMode == "Idle" ||
+                        (newMode == "DMR" ? channel == 0 : channel != 0)) {
+                        if (auto end = forcedEndIfOpen(line, ts, channel)) pending_.push_back(*end);
                     }
                 }
 
@@ -393,53 +392,36 @@ public:
             }
         }
 
-        // D-Star Slow Data Text (Reflektor-/Link-Infos)
+        // D-Star link announcements may be English or German. Consume the whole
+        // quoted message here so it cannot fall through into the YSF rule.
         {
             std::smatch m;
-            if (std::regex_search(line, m, rx.dstar_slowdata_text)) {
-                std::string txt = trim(m[1].str());
-                if (starts_with(txt, "Verlinkt zu ")) {       // <<< NEU: nur Link-Status
-                    ParsedResult res;
-                    res.originalLine = line;
-                    res.mode = "D-Star";
-                    res.startEnd = "Info";
-                    res.source = "NET";
-                    res.callsign = "";
-                    res.dgId = std::nullopt;
-                    res.durationSec = std::nullopt;
-                    res.berPct = std::nullopt;
-                    res.info = txt; // z.B. "Verlinkt zu DCS001 R"
-                    return res;
+            if (std::regex_search(line, m, rx.dstar_slowdata_text) ||
+                std::regex_search(line, m, rx.dstar_link_status_set)) {
+                const std::string text = trim(m[1].str());
+                std::string reflector;
+                if (starts_with(text, "Linked to ")) {
+                    reflector = trim(text.substr(10));
+                } else if (starts_with(text, "Verlinkt zu ")) {
+                    reflector = trim(text.substr(12));
+                } else if (text != "Not linked" && text != "Nicht verlinkt" && text != "Unlinked") {
+                    return std::nullopt; // User slow-data text is not a link announcement.
                 }
-                // sonst ignorieren (kein Link-Status)
-            }
-        }
-
-        // D-Star: "link status set to "<...>" (z.B. Verlinkt zu DCS001 R)
-        {
-            std::smatch m;
-            if (std::regex_search(line, m, rx.dstar_link_status_set)) {
-                std::string txt = trim(m[1].str());
-                if (starts_with(txt, "Verlinkt zu ")) {
-                    ParsedResult res;
-                    res.originalLine = line;
-                    res.mode = "D-Star";
-                    res.startEnd = "Info";
-                    res.source = "NET";
-                    res.callsign = "";
-                    res.dgId = std::nullopt;
-                    res.durationSec = std::nullopt;
-                    res.berPct = std::nullopt;
-                    res.info = txt;
-                    return res;
-                }
+                ParsedResult res;
+                res.originalLine = line;
+                res.mode = "D-Star";
+                res.startEnd = "Info";
+                res.source = "NET";
+                res.info = reflector;
+                return res;
             }
         }
 
         // 2) YSF: "Linked to <Reflector>"
         {
             std::smatch m;
-            if (std::regex_search(line, m, rx.ysf_linked_to)) {
+            if (line.find("D-Star") == std::string::npos &&
+                std::regex_search(line, m, rx.ysf_linked_to)) {
                 ParsedResult res;
                 res.originalLine = line;
                 res.mode = "YSF";
@@ -449,7 +431,7 @@ public:
                 res.dgId = std::nullopt;
                 res.durationSec = std::nullopt;
                 res.berPct = std::nullopt;
-                res.info = std::string("Linked to ") + m[1].str();   // z. B. "Linked to DE-C4FM-Germany"
+                res.info = std::string("Linked to ") + trim(m[1].str());
                 return res;
             }
         }
@@ -580,18 +562,8 @@ public:
 
     // Am Ende der Datei aufrufen, um eine offene Übertragung sauber zu schließen (falls gewünscht).
     std::optional<ParsedResult> flushAtEof(const std::string& lastLine) {
-        if (!open_) return std::nullopt;
-        ParsedResult res;
-        res.originalLine = lastLine;
-        res.mode      = open_->mode;
-        res.startEnd  = "Ende";
-        res.source    = open_->source;
-        res.callsign  = open_->callsign;
-        res.dgId      = open_->dgId;
-        res.durationSec = std::nullopt;
-        res.berPct = std::nullopt;
-        open_.reset();
-        return res;
+        if (open_.empty()) return std::nullopt;
+        return forcedEndIfOpen(lastLine, std::nullopt, open_.begin()->first);
     }
 
     // Abruf der ggf. aufgelaufenen "erzwungenen Ende"-Ergebnisse vor einem Start
@@ -622,7 +594,8 @@ private:
         std::regex dstar_link_status_set;  // D-Star link status set to "Verlinkt zu DCS001 R"
     } rx;
 
-    std::optional<TransmissionState> open_;
+    // Channel 0 is D-Star/YSF; DMR TS1 and TS2 have independent sessions.
+    std::map<int, TransmissionState> open_;
     std::vector<ParsedResult> pending_;
 
     static double toDouble(const std::string& s) {
@@ -654,26 +627,28 @@ private:
     std::optional<ParsedResult>
     forcedEndIfOpen(const std::string& line,
                     const std::optional<std::chrono::system_clock::time_point>& ts,
-                    const std::string& /*reason*/) {
-        if (!open_) return std::nullopt;
+                    int channel) {
+        auto it = open_.find(channel);
+        if (it == open_.end()) return std::nullopt;
+        const auto& session = it->second;
 
         ParsedResult res;
         res.originalLine = line;
-        res.mode = open_->mode;
+        res.mode = session.mode;
         res.startEnd = "Ende";
-        res.source = open_->source;
-        res.callsign = open_->callsign;
-        res.dgId = open_->dgId;
-        res.slot = open_->slot;
+        res.source = session.source;
+        res.callsign = session.callsign;
+        res.dgId = session.dgId;
+        res.slot = session.slot;
 
         if (ts.has_value()) {
-            auto d = std::chrono::duration_cast<std::chrono::milliseconds>(ts.value() - open_->startTp).count();
+            auto d = std::chrono::duration_cast<std::chrono::milliseconds>(ts.value() - session.startTp).count();
             res.durationSec = d / 1000.0;
         } else {
             res.durationSec = std::nullopt;
         }
         res.berPct = std::nullopt; // nicht im Log
-        open_.reset();
+        open_.erase(it);
         return res;
     }
 
@@ -706,15 +681,16 @@ private:
         // Nur Netzwerk-Echos unterdrücken – RF mit eigenem Call behalten
         if (isSelf(cs) && source == "NET" && ignoreSelfOnNET) return std::nullopt;
 
-        // Falls noch offen → zuerst erzwungen beenden
-        std::optional<ParsedResult> priorEnd;
-        if (open_) {
-            priorEnd = forcedEndIfOpen(line, ts, "NewStart");
+        const int channel = mode == "DMR" ? slotId.value_or(0) : 0;
+        for (auto it = open_.begin(); it != open_.end();) {
+            int existing = it++->first;
+            if (existing == channel || channel == 0 || existing == 0) {
+                if (auto end = forcedEndIfOpen(line, ts, existing)) pending_.push_back(*end);
+            }
         }
 
         auto stp = ts.value_or(std::chrono::system_clock::now());
-        //open_ = TransmissionState{mode, source, cs, dgId, stp, line};
-        open_ = TransmissionState{mode, source, cs, dgId, slotId, stp, line};
+        open_[channel] = TransmissionState{mode, source, cs, dgId, slotId, stp, line};
 
         ParsedResult res;
         res.originalLine = line;
@@ -727,7 +703,6 @@ private:
         res.durationSec = std::nullopt;
         res.berPct = std::nullopt;
 
-        if (priorEnd) pending_.push_back(*priorEnd);
         return res;
     }
 
@@ -759,18 +734,20 @@ private:
         std::optional<int> outDgId = dgId;
         std::optional<int> outSlot = slotId;
 
-        /*if (outCallsign.empty() && open_) {
-            outCallsign = open_->callsign;
-            if (!outDgId.has_value()) outDgId = open_->dgId;
-        }*/
-       if (open_) {
-            if (outCallsign.empty()) outCallsign = open_->callsign;
-            if (!outDgId.has_value()) outDgId = open_->dgId;
-            if (!outSlot.has_value()) outSlot = open_->slot;
-         }
-
-        // Offene Session schließen, egal ob passend
-        if (open_) open_.reset();
+        const int channel = mode == "DMR" ? slotId.value_or(0) : 0;
+        auto it = open_.find(channel);
+        if (it != open_.end()) {
+            const auto& session = it->second;
+            if (session.mode != mode || session.source != source ||
+                (!cs.empty() && cs != session.callsign) ||
+                (dgId && session.dgId && dgId != session.dgId)) {
+                return std::nullopt; // A late end must not close another call.
+            }
+            if (outCallsign.empty()) outCallsign = session.callsign;
+            if (!outDgId.has_value()) outDgId = session.dgId;
+            if (!outSlot.has_value()) outSlot = session.slot;
+            open_.erase(it);
+        }
 
         ParsedResult res;
         res.originalLine = line;
@@ -885,33 +862,36 @@ void upsertStatus(const std::string& mode,
                   const std::optional<double>& duration) {
         if (!ensure_conn() || !st_upsert_status) return;
 
-        MYSQL_BIND b[9]{}; // mode, callsign, dgid, slot, source, active, ber, duration, NOW()
+        MYSQL_BIND b[9]{};
+        int rowId = 1; // Legacy summary plus one persistent row per DMR timeslot.
+        b[0].buffer_type = MYSQL_TYPE_LONG;
+        b[0].buffer = &rowId;
         // 1) mode
         Scratch s1(mode);
-        b[0] = s1.bind_str();
+        b[1] = s1.bind_str();
         // 2) callsign
         Scratch s2(callsign);
-        b[1] = s2.bind_str();
+        b[2] = s2.bind_str();
         // 3) dgid (nullable)
         NullableInt ni(dgid);
-        b[2] = ni.bind_int();
+        b[3] = ni.bind_int();
         // 4) slot
         NullableInt nslot(slot);          
-        b[3] = nslot.bind_int();
+        b[4] = nslot.bind_int();
         // 5) source (nullable)
         Scratch s4(source.value_or(""));
         NullableStr ns4(source.has_value());
-        b[4] = ns4.bind_str(s4);
+        b[5] = ns4.bind_str(s4);
         // 5) active (tinyint)
         my_bool active_flag = active ? 1 : 0;
-        b[5].buffer_type = MYSQL_TYPE_TINY;
-        b[5].buffer = &active_flag;
+        b[6].buffer_type = MYSQL_TYPE_TINY;
+        b[6].buffer = &active_flag;
         // 6) ber (nullable double)
         NullableDouble nb(ber);
-        b[6] = nb.bind_double();
+        b[7] = nb.bind_double();
         // 7) duration (nullable double)
         NullableDouble nd(duration);
-        b[7] = nd.bind_double();
+        b[8] = nd.bind_double();
         // 8) updated_at = NOW() → kein Bind nötig (im SQL)
 
         if (mysql_stmt_bind_param(st_upsert_status, b) != 0) {
@@ -920,6 +900,12 @@ void upsertStatus(const std::string& mode,
         }
         if (mysql_stmt_execute(st_upsert_status) != 0) {
             dlog("[DB  ] exec upsert status failed: ", mysql_stmt_error(st_upsert_status));
+        }
+        if (mode == "DMR" && slot && (*slot == 1 || *slot == 2)) {
+            rowId = *slot + 1;
+            if (mysql_stmt_execute(st_upsert_status) != 0) {
+                dlog("[DB  ] exec DMR slot status failed: ", mysql_stmt_error(st_upsert_status));
+            }
         }
     }
 
@@ -984,6 +970,7 @@ void insertLastHeard(const std::string& callsign,
             );
         } else if (r.startEnd == "Mode") {
             if (r.mode == "Idle") {
+                if (ensure_conn()) mysql_query(conn, "UPDATE status SET active=0 WHERE id IN (2,3)");
                 // Nur Idle: Status auf inactive setzen und Felder leeren
                 upsertStatus(
                     r.mode, "", std::nullopt,std::nullopt,
@@ -1011,7 +998,7 @@ void insertLastHeard(const std::string& callsign,
                 }
             } else if (r.mode == "D-Star") {
                 // Slow data "Verlinkt zu <name>" oder beliebiger Text -> speichere voll
-                setReflectorDStar(stripPrefix(msg, "Verlinkt zu "));
+                setReflectorDStar(msg);
             } else if (r.mode == "DMR") {
                 // "Logged into master: <server>"
                 setReflectorDMR(stripPrefix(msg, "Logged into master: "));
@@ -1026,6 +1013,7 @@ private:
     std::string unix_socket;
 
     MYSQL* conn;
+    bool initialStatus = true;
     MYSQL_STMT *st_upsert_status, *st_insert_lastheard;
     MYSQL_STMT *st_upsert_reflector_dstar, *st_upsert_reflector_fusion, *st_upsert_reflector_dmr;
 
@@ -1097,9 +1085,19 @@ private:
         mysql_query(conn, "INSERT IGNORE INTO reflector (id,dstar,dmr,fusion,updated_at) "
                           "VALUES (1,NULL,NULL,NULL,NOW());");
 
+        // Remove the quoted D-Star names stored in Fusion by older parsers.
+        mysql_query(conn, "UPDATE reflector SET fusion=NULL WHERE fusion REGEXP "
+                          "'^(DCS|XRF|REF|XLX)[0-9]{3}[[:space:]]*[A-Z][[:space:]]*\"$'");
+
         prepare_statements();
         mysql_query(conn, "INSERT IGNORE INTO status (id,mode,callsign,dgid,slot,source,active,ber,duration,updated_at) "
                    "VALUES (1,'Idle','',NULL,NULL,'RF',0,NULL,NULL,NOW());");
+        mysql_query(conn, "INSERT IGNORE INTO status (id,mode,callsign,slot,active,updated_at) "
+                         "VALUES (2,'DMR','',1,0,NOW()), (3,'DMR','',2,0,NOW());");
+        if (initialStatus) {
+            mysql_query(conn, "UPDATE status SET active=0 WHERE active<>0");
+            initialStatus = false;
+        }
         return true;
     }
 
@@ -1108,7 +1106,7 @@ private:
 
         const char* ps1 =
             "INSERT INTO status (id, mode, callsign, dgid, slot, source, active, ber, duration, updated_at) "
-            "VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, NOW()) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW()) "
             "ON DUPLICATE KEY UPDATE "
             " mode=VALUES(mode), callsign=VALUES(callsign), dgid=VALUES(dgid), slot=VALUES(slot), source=VALUES(source), "
             " active=VALUES(active), ber=VALUES(ber), duration=VALUES(duration), updated_at=NOW();";

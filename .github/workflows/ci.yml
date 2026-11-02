@@ -44,7 +44,7 @@ jobs:
           source ./install.sh
           base_packages
           apt-get install -y --no-install-recommends \
-            python3 nodejs php-cli shellcheck systemd mosquitto mosquitto-clients
+            python3 nodejs php-cli shellcheck systemd mosquitto mosquitto-clients chromium
 
       - name: Check syntax and required PHP extensions
         run: python3 .github/scripts/check_syntax.py
@@ -59,3 +59,12 @@ jobs:
 
       - name: Smoke test database, backends and HTTP API
         run: python3 .github/scripts/smoke_test.py
+
+      - name: Keep smoke test logs and dashboard screenshot
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: debian-smoke-test
+          path: /tmp/opendvm-ci/
+          if-no-files-found: ignore
+          retention-days: 7

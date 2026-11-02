@@ -134,6 +134,56 @@
         text-shadow: 0 1px 0 #0006;
       }
 
+      .dmr-slots {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .callsign-box[hidden], .dmr-slots[hidden] {
+        display: none;
+      }
+
+      .dmr-slot {
+        min-width: 0;
+        padding: 12px;
+        background: var(--tile-alt);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+      }
+
+      .dmr-slot.active {
+        border-color: var(--active-border);
+        background: #620013;
+      }
+
+      .slot-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+        margin-bottom: 8px;
+      }
+
+      .slot-call {
+        display: block;
+        font-size: 28px;
+        font-weight: 800;
+        color: var(--fg);
+        text-decoration: none;
+        overflow-wrap: anywhere;
+      }
+
+      .slot-details {
+        margin-top: 6px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      @media (max-width: 480px) {
+        .dmr-slots { grid-template-columns: 1fr; }
+      }
+
       /* Mode: dynamischer Hintergrund per Klasse */
       .mode-tile {
         transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
@@ -545,7 +595,7 @@
         <!-- Callsign -->
         <section id="callsignTile" class="tile callsign-tile">
           <h2>Callsign <span id="rxBadge" class="badge">inactive</span></h2>
-          <div class="callsign-box">
+          <div id="singleCallsign" class="callsign-box">
             <img id="flag" class="flag" alt="" />
             <a
               id="callsign"
@@ -556,6 +606,7 @@
               >–</a
             >
           </div>
+          <div id="dmrSlots" class="dmr-slots" hidden></div>
         </section>
 
         <!-- Reflector -->
@@ -587,7 +638,7 @@
 
         <!-- Status -->
         <section class="tile">
-          <h2>Status</h2>
+          <h2 id="statusTitle">Status</h2>
           <div class="kv-grid">
             <div class="kv">
               <span class="k">BER (last TX)</span><span id="ber" class="v">–</span>
@@ -845,6 +896,57 @@
         lastUpdated = d.updated_at
           ? new Date(d.updated_at.replace(/([+-]\d{2})(\d{2})$/, "$1:$2"))
           : null;
+        renderDmrSlots(d);
+      }
+
+      function renderDmrSlots(d) {
+        const container = document.getElementById("dmrSlots");
+        const slots = Array.isArray(d.slots) ? d.slots : [];
+        const show = String(d.mode || "").toUpperCase().startsWith("DMR") && slots.length > 0;
+        container.hidden = !show;
+        document.getElementById("singleCallsign").hidden = show;
+        document.getElementById("statusTitle").textContent = show && d.slot
+          ? `Status · TS${d.slot}` : "Status";
+        container.replaceChildren();
+        if (!show) return;
+
+        for (const number of [1, 2]) {
+          const slot = slots.find(item => Number(item.slot) === number) || {};
+          const active = slot.active === true || Number(slot.active) === 1;
+          const card = document.createElement("article");
+          card.id = `dmr-slot-${number}`;
+          card.className = "dmr-slot" + (active ? " active" : "");
+
+          const heading = document.createElement("div");
+          heading.className = "slot-heading";
+          const title = document.createElement("strong");
+          title.textContent = `TS${number}`;
+          const badge = document.createElement("span");
+          badge.className = "badge";
+          badge.textContent = active ? "active" : "inactive";
+          heading.append(title, badge);
+
+          const call = document.createElement("a");
+          const callsign = sanitizeCallsign(slot.callsign || "");
+          call.className = "slot-call mono";
+          call.textContent = callsign || "–";
+          if (callsign) {
+            call.href = linkQRZ(callsign);
+            call.target = "_blank";
+            call.rel = "noopener noreferrer";
+          }
+
+          const group = document.createElement("div");
+          group.className = "slot-details mono";
+          group.textContent = `${slot.dgid == null ? "TG–" : `TG${slot.dgid}`} · ${slot.source || "–"}`;
+          const metrics = document.createElement("div");
+          metrics.className = "slot-details";
+          metrics.textContent = `BER: ${slot.ber == null ? "–" : `${slot.ber} %`} · Duration: ${slot.duration == null ? "–" : `${slot.duration} s`}`;
+          card.append(heading, call, group, metrics);
+          container.appendChild(card);
+        }
+        const activeCount = slots.filter(slot => slot.active === true || Number(slot.active) === 1).length;
+        els.rxBadge.textContent = `DMR · ${activeCount} active`;
       }
 
       function renderLastHeard(rows) {

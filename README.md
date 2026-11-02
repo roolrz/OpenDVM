@@ -110,7 +110,7 @@ New entries are immediately detected, parsed, and written into the database.
 
 | Table | Description |
 |--------|--------------|
-| `status` | Current status (mode, callsign, RF/NET, duration, BER) |
+| `status` | Current status and independent DMR TS1/TS2 status (callsign, TG, RF/NET, duration, BER) |
 | `lastheard` | Every transmission with timestamp |
 | `reflector` | Current reflector per mode |
 | `config_inbox` | Configuration |
@@ -122,6 +122,9 @@ New entries are immediately detected, parsed, and written into the database.
 - D-Star does not store DG-ID, Fusion does  
 - “Watchdog expired” messages are treated as EOT  
 - DMR master names (e.g., `BM_2621_Germany`) are recognized automatically  
+
+D-Star link announcements are recognized in English and German. DMR TS1 and TS2
+are tracked independently and displayed together, including overlapping calls.
 
 ---
 
@@ -262,6 +265,10 @@ The most important settings can be configured in the SETUP window:
 
 You can still manually edit the generated configuration files if needed — although this is rarely necessary. The only setting you might need to adjust is the MMDVM modem baud rate. By default, it’s set to 115200 Bd, which works for most MMDVM boards. However, some boards (for example, Repeater Builder boards) may require 460800 Bd — see the [Modem] section in /etc/MMDVMHost.ini.
 
+D-Star announcements default to English (`language=0` in `/etc/ircddbgateway`).
+Updates preserve existing configuration; on an existing installation, set this value
+manually and restart `ircddbgateway.service` to switch its announcement language.
+
 5. **Reboot:**
    ```bash
    sudo reboot
@@ -306,6 +313,7 @@ All checks run inside `debian:stable-slim`, following the latest Debian stable r
 - Check Bash/ShellCheck errors, PHP syntax and extensions, and JavaScript syntax (including inline scripts).
 - Compile `mmdvm-status` and `DVconfig` using the production build commands.
 - Start MariaDB, a local MQTT broker, both backends and the PHP HTTP server; verify D-Star/YSF/DMR log ingestion, MQTT ingestion, dashboard APIs, authentication rejection and configuration submission.
+- Replay D-Star reflector announcements and overlapping DMR calls, and verify that Chromium renders both timeslots and their talkgroups.
 
 The smoke test changes `/etc` and starts services only inside the disposable CI container.
 It does not exercise MMDVM hardware, systemd service restarts, external radio networks,
