@@ -271,6 +271,7 @@ try {
             WHEN mode LIKE 'D-Star%'                             THEN 'dstar'
             WHEN mode LIKE 'System Fusion%' OR mode LIKE 'YSF%' THEN 'ysf'
             WHEN mode LIKE 'DMR%'                                THEN 'dmr'
+            WHEN mode LIKE 'NXDN%'                               THEN 'nxdn'
             ELSE NULL
           END AS mode_norm
         FROM lastheard
@@ -280,7 +281,7 @@ try {
       GROUP BY mode_norm
     ")->fetchAll();
 
-    $out = ['dstar' => 0, 'ysf' => 0, 'dmr' => 0];
+    $out = ['dstar' => 0, 'ysf' => 0, 'dmr' => 0, 'nxdn' => 0];
     foreach ($rows as $r) {
       $out[strtolower($r['mode_norm'])] = (int) $r['cnt'];
     }
@@ -301,6 +302,7 @@ try {
             WHEN mode LIKE 'D-Star%'                             THEN 'dstar'
             WHEN mode LIKE 'System Fusion%' OR mode LIKE 'YSF%' THEN 'ysf'
             WHEN mode LIKE 'DMR%'                                THEN 'dmr'
+            WHEN mode LIKE 'NXDN%'                               THEN 'nxdn'
             ELSE NULL
           END AS mode_norm,
           source, ts
@@ -316,6 +318,7 @@ try {
       'dstar' => ['RF' => 0, 'NET' => 0],
       'ysf'   => ['RF' => 0, 'NET' => 0],
       'dmr'   => ['RF' => 0, 'NET' => 0],
+      'nxdn'  => ['RF' => 0, 'NET' => 0],
     ];
 
     foreach ($rows as $r) {
@@ -464,6 +467,7 @@ try {
         dstar,
         dmr,
         fusion,
+        nxdn,
         DATE_FORMAT(updated_at, '%Y-%m-%d %H:%i:%s') AS updated_at
       FROM reflector
       WHERE id = 1
@@ -471,11 +475,12 @@ try {
     ")->fetch();
 
     if ($row) {
-      foreach (['dstar', 'dmr', 'fusion'] as $k) {
+      foreach (['dstar', 'dmr', 'fusion', 'nxdn'] as $k) {
         if ($row[$k] === null) {
           $row[$k] = '-----'; // Platzhalter
         }
       }
+      $row['nxdn_static'] = $pdo->query('SELECT nxdn_static FROM config_inbox WHERE id=1')->fetchColumn() ?: '';
     }
 
     echo json_encode($row ?: [], JSON_UNESCAPED_UNICODE);
@@ -534,6 +539,10 @@ try {
         dstar_boot     AS DstarStartOnBoot,
         dmr_boot       AS DmrStartOnBoot,
         ysf_boot       AS YsfStartOnBoot,
+        nxdn_boot      AS NxdnStartOnBoot,
+        nxdn_id        AS NxdnId,
+        nxdn_ran       AS NxdnRAN,
+        nxdn_static    AS NxdnStatic,
         apply_error    AS apply_error,
         is_new         AS is_new,
         DATE_FORMAT(updated_at, '%Y-%m-%d %H:%i:%s') AS updated_at

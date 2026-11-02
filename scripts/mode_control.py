@@ -22,6 +22,7 @@ MODES = {
     "dstar": ("ircddbgateway.service", "D-Star", "D-Star Network"),
     "dmr": ("dmrgateway.service", "DMR", "DMR Network"),
     "ysf": ("ysfgateway.service", "System Fusion", "System Fusion Network"),
+    "nxdn": ("nxdngateway.service", "NXDN", "NXDN Network"),
 }
 
 
@@ -118,6 +119,7 @@ def status():
 
 
 def apply_runtime(flags):
+    validate_flags(flags)
     write_radio_flags(flags)
     stopped = [MODES[mode][0] for mode, enabled in flags.items() if not enabled]
     if stopped:
@@ -125,6 +127,15 @@ def apply_runtime(flags):
     # One transaction keeps the gateways ordered after the shared modem host.
     systemctl("--no-block", "restart", "mmdvmhost.service",
               *(MODES[mode][0] for mode, enabled in flags.items() if enabled))
+
+
+def validate_flags(flags):
+    if flags.get("nxdn"):
+        config = configparser.ConfigParser(interpolation=None, strict=False)
+        config.read(HOST_CONFIG)
+        identity = config.get("NXDN", "Id", fallback="0").strip()
+        if not identity.isdecimal() or not 1 <= int(identity) <= 65535:
+            raise ValueError("Set an NXDN ID (1–65535) and Save & apply before starting NXDN")
 
 
 def dispatch(arguments):
@@ -144,16 +155,23 @@ def dispatch(arguments):
             INITIALIZED.chmod(0o600)
         return {"ok": True}
     if arguments == ["apply-boot"]:
-        write_radio_flags(boot_flags(units()))
+        flags = boot_flags(units())
+        # An unconfigured NXDN ID must not prevent the other modes from booting.
+        try:
+            validate_flags(flags)
+        except ValueError:
+            flags["nxdn"] = False
+        write_radio_flags(flags)
         return {"ok": True}
     if len(arguments) == 2 and arguments[0] in ("start", "stop") and arguments[1] in MODES:
         units()
         apply_runtime({arguments[1]: arguments[0] == "start"})
         return {"ok": True, "modes": status()}
-    if len(arguments) == 4 and arguments[0] == "configure" and all(value in ("0", "1") for value in arguments[1:]):
+    if len(arguments) == len(MODES) + 1 and arguments[0] == "configure" and all(value in ("0", "1") for value in arguments[1:]):
         flags = dict(zip(MODES, (value == "1" for value in arguments[1:])))
         # Confirm services are available before changing boot policy or RF flags.
         units()
+        validate_flags(flags)
         for mode, enabled in flags.items():
             systemctl("enable" if enabled else "disable", MODES[mode][0])
         apply_runtime(flags)

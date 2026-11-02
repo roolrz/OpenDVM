@@ -270,6 +270,25 @@ die Bedienung benötigt. YSF **CONNECT** / **DISCONNECT** steuert weiterhin die
 Reflektorverbindung. Einmal `sudo ./install_update.sh` ausführen, um die neuen
 Dienste und Berechtigungen zu installieren. Updates behalten die Startauswahl bei.
 
+NXDN wird mitinstalliert und ist zunächst deaktiviert. Im NXDN-Feld die eigene
+NXDN-ID (1–65535, unabhängig von der DMR-ID), RAN (0–63) und optionale statische
+TG-Liste eintragen und speichern. **Start on boot** und **Start** / **Stop**
+funktionieren wie bei den anderen Modi. `install_update.sh` installiert das
+Gateway aus `roolrz/NXDNClients` und den benötigten lokalen Mosquitto-Broker.
+Bestehende Gateway-Einstellungen bleiben erhalten. Logs:
+`/var/log/mmdvm/NXDNGateway.log` und `journalctl -u nxdngateway`.
+
+Die NXDN-Serverliste und RadioID-Tabelle werden bei Installation und Update
+automatisch erneuert. Separat: `sudo /usr/local/sbin/opendvm-update-nxdn-hosts`.
+Beide Downloads werden vor dem Ersetzen geprüft und als `.bak` gesichert.
+DNS wird während des Updates parallel und mit Zeitlimit aufgelöst; das Gateway
+liest numerische IP-Adressen aus `/usr/local/etc/NXDNHosts.json`. Bei DNS-Fehlern
+bleiben bisherige Adressen erhalten, soweit vorhanden. Ungültige Downloads und
+zu viele unauflösbare Einträge lassen die aktiven Dateien unverändert.
+Private Einträge in `/usr/local/etc/NXDNHosts.private` bleiben erhalten;
+dort ebenfalls numerische IP-Adressen verwenden. Gestoppte Gateways werden
+durch ein Listenupdate nicht gestartet.
+
 Du kannst die erzeugten Konfigurationsdateien bei Bedarf weiterhin manuell bearbeiten – das ist jedoch in der Regel nicht notwendig. Die einzige Einstellung, die eventuell angepasst werden muss, ist die MMDVM-Modem-Baudrate. Standardmäßig ist sie auf 115200 Bd gesetzt, was für die meisten MMDVM-Boards geeignet ist. Einige Boards (z. B. Repeater Builder Boards) benötigen jedoch 460800 Bd – siehe dazu den Abschnitt [Modem] in /etc/MMDVMHost.ini.
 
 5. **Neustart:**

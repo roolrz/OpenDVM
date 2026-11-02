@@ -215,14 +215,15 @@ static std::vector<std::string> logsForDir(const std::string& dir) {
         return std::vector<std::string>{
             (std::filesystem::path(dir)/("DMRGateway-"+d+".log")).string(),
             (std::filesystem::path(dir)/("MMDVM-"+d+".log")).string(),
-            (std::filesystem::path(dir)/("YSFGateway-"+d+".log")).string()
+            (std::filesystem::path(dir)/("YSFGateway-"+d+".log")).string(),
+            (std::filesystem::path(dir)/"NXDNGateway.log").string()
         };
     };
     auto utcSet = build(utc);
     auto locSet = build(loc);
 
     std::vector<std::string> out; out.reserve(3);
-    for (int i=0;i<3;++i) {
+    for (size_t i=0;i<utcSet.size();++i) {
         if (std::filesystem::exists(utcSet[i])) out.push_back(utcSet[i]);
         else if (std::filesystem::exists(locSet[i])) out.push_back(locSet[i]);
         else out.push_back(utcSet[i]); // fallback: UTC-Name beobachten
@@ -285,18 +286,20 @@ static std::vector<std::string> defaultLogPaths() {
         {
             "/var/log/mmdvm/DMRGateway-" + utc + ".log",
             "/var/log/mmdvm/MMDVM-"      + utc + ".log",
-            "/var/log/mmdvm/YSFGateway-" + utc + ".log"
+            "/var/log/mmdvm/YSFGateway-" + utc + ".log",
+            "/var/log/mmdvm/NXDNGateway.log"
         },
         {
             "/var/log/mmdvm/DMRGateway-" + loc + ".log",
             "/var/log/mmdvm/MMDVM-"      + loc + ".log",
-            "/var/log/mmdvm/YSFGateway-" + loc + ".log"
+            "/var/log/mmdvm/YSFGateway-" + loc + ".log",
+            "/var/log/mmdvm/NXDNGateway.log"
         }
     };
 
     std::vector<std::string> out;
     out.reserve(3);
-    for (int i = 0; i < 3; ++i) {
+    for (size_t i = 0; i < candidates[0].size(); ++i) {
         // nimm den ersten existierenden Kandidaten je Rolle
         std::string pick;
         for (const auto& set : candidates) {
@@ -346,6 +349,11 @@ public:
         rx.dmr_rfEnd      = std::regex(R"(DMR\s+Slot\s+(\d+),\s+received\s+RF\s+end\s+of\s+voice\s+transmission\s+from\s+(\S+)\s+to\s+TG\s+(\d+),\s*([\d.]+)\s+seconds,\s*BER:\s*([\d.]+)%)");
 
         // --- Allgemein ---
+        rx.nxdn_start = std::regex(R"(NXDN,\s+received\s+(RF|network)\s+(?:header|late entry|transmission)\s+from\s+(\S+)\s+to\s+(?:TG\s+)?(\d+))");
+        rx.nxdn_end = std::regex(R"(NXDN,\s+received\s+(RF|network)\s+end of transmission\s+from\s+(\S+)\s+to\s+(?:TG\s+)?(\d+),\s*([\d.]+)\s+seconds(?:,\s*BER:\s*([\d.]+)%)?)");
+        rx.nxdn_lost = std::regex(R"(NXDN,\s+transmission lost from\s+(\S+)\s+to\s+(?:TG\s+)?(\d+),\s*([\d.]+)\s+seconds,\s*BER:\s*([\d.]+)%)");
+        rx.nxdn_watchdog = std::regex(R"(NXDN,\s+network watchdog has expired,\s*([\d.]+)\s+seconds)");
+        rx.nxdn_link = std::regex(R"(Switched to reflector (\d+) (?:due to (?:RF|network) activity|by remote command))");
         rx.modeIdle       = std::regex(R"(Mode\s+set\s+to\s+Idle)");
         rx.timestamp      = std::regex(R"(^\s*[A-Z]:\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\.(\d{3}))");
 
@@ -358,7 +366,7 @@ public:
     }
 
     // Gibt bei relevanter Zeile ein ParsedResult zurück; sonst nullopt.
-    std::optional<ParsedResult> processLine(const std::string& line) {
+    std::optional<ParsedResult> processLine(const std::string& line, bool nxdnGateway = false) {
         auto ts = extractTimestamp(line);
 
         // Betriebsart-Wechsel ("Mode set to <Mode>")
@@ -418,6 +426,21 @@ public:
         }
 
         // 2) YSF: "Linked to <Reflector>"
+        {
+            std::smatch m;
+            const bool linked = std::regex_search(line, m, rx.nxdn_link);
+            if (nxdnGateway && (linked || line.find("NXDNGateway is stopping") != std::string::npos ||
+                (line.find("NXDNGateway-") != std::string::npos && line.find(" is starting") != std::string::npos) ||
+                line.find("Unlinking from ") != std::string::npos)) {
+                ParsedResult res;
+                res.originalLine = line;
+                res.mode = "NXDN";
+                res.startEnd = "Info";
+                res.info = linked ? "TG " + m[1].str() : "";
+                return res;
+            }
+        }
+
         {
             std::smatch m;
             if (line.find("D-Star") == std::string::npos &&
@@ -556,6 +579,20 @@ public:
                 return handleEnd(line, ts, "DMR", "RF", cs, tg, dur, ber, slot);            }
         }
 
+        // NXDN shares the non-DMR radio channel, with no invented BER on NET.
+        {
+            std::smatch m;
+            if (std::regex_search(line, m, rx.nxdn_start))
+                return handleStart(line, ts, "NXDN", m[1] == "RF" ? "RF" : "NET", m[2], std::stoi(m[3]));
+            if (std::regex_search(line, m, rx.nxdn_end))
+                return handleEnd(line, ts, "NXDN", m[1] == "RF" ? "RF" : "NET", m[2], std::stoi(m[3]),
+                                 toDouble(m[4]), m[5].matched ? std::optional<double>(toDouble(m[5])) : std::nullopt);
+            if (std::regex_search(line, m, rx.nxdn_lost))
+                return handleEnd(line, ts, "NXDN", "RF", m[1], std::stoi(m[2]), toDouble(m[3]), toDouble(m[4]));
+            if (std::regex_search(line, m, rx.nxdn_watchdog))
+                return handleEnd(line, ts, "NXDN", "NET", "", std::nullopt, toDouble(m[1]), std::nullopt);
+        }
+
         // sonst nicht relevant
         return std::nullopt;
     }
@@ -584,6 +621,7 @@ private:
         std::regex ysf_netStartA, ysf_netStartB, ysf_netEndA, ysf_netEndB, ysf_rfStart, ysf_rfEnd;
         // DMR
         std::regex dmr_netStart, dmr_netEnd, dmr_rfStart, dmr_rfEnd;
+        std::regex nxdn_start, nxdn_end, nxdn_lost, nxdn_watchdog, nxdn_link;
         // Allgemein
         std::regex modeIdle;
         std::regex timestamp;
@@ -660,6 +698,13 @@ private:
         return s;
     }
 
+    static bool validIdentity(const std::string& mode, const std::string& identity) {
+        if (isValidCallsign(identity)) return true;
+        return mode == "NXDN" && !identity.empty() && identity.size() <= 5 &&
+               identity.find_first_not_of("0123456789") == std::string::npos &&
+               std::stoi(identity) > 0 && std::stoi(identity) <= 65535;
+    }
+
     std::optional<ParsedResult>
     handleStart(const std::string& line,
                 const std::optional<std::chrono::system_clock::time_point>& ts,
@@ -670,7 +715,7 @@ private:
                 std::optional<int> slotId = std::nullopt) {
                     
         std::string cs = sanitizeCallsign(callsign);
-        if (!cs.empty() && !isValidCallsign(cs)) return std::nullopt;
+        if (!cs.empty() && !validIdentity(mode, cs)) return std::nullopt;
 
         // ignore if it's our own callsign (with optional -suffix)
         auto isSelf = [&](const std::string& cs) -> bool {
@@ -718,7 +763,7 @@ private:
             std::optional<int> slotId = std::nullopt) {
 
         std::string cs = sanitizeCallsign(callsign);
-        if (!cs.empty() && !isValidCallsign(cs)) return std::nullopt;
+        if (!cs.empty() && !validIdentity(mode, cs)) return std::nullopt;
 
         // ignore if it's our own callsign (with optional -suffix)
         auto isSelf = [&](const std::string& cs) -> bool {
@@ -833,7 +878,7 @@ public:
       port(0), unix_socket("/run/mysqld/mysqld.sock"),
       conn(nullptr),
       st_upsert_status(nullptr), st_insert_lastheard(nullptr),
-      st_upsert_reflector_dstar(nullptr), st_upsert_reflector_fusion(nullptr), st_upsert_reflector_dmr(nullptr)
+      st_upsert_reflector_dstar(nullptr), st_upsert_reflector_fusion(nullptr), st_upsert_reflector_dmr(nullptr), st_upsert_reflector_nxdn(nullptr)
        {
     }
 
@@ -1002,6 +1047,8 @@ void insertLastHeard(const std::string& callsign,
             } else if (r.mode == "DMR") {
                 // "Logged into master: <server>"
                 setReflectorDMR(stripPrefix(msg, "Logged into master: "));
+            } else if (r.mode == "NXDN") {
+                upsertReflector(msg, st_upsert_reflector_nxdn, "nxdn");
             }
         }
     }
@@ -1016,6 +1063,7 @@ private:
     bool initialStatus = true;
     MYSQL_STMT *st_upsert_status, *st_insert_lastheard;
     MYSQL_STMT *st_upsert_reflector_dstar, *st_upsert_reflector_fusion, *st_upsert_reflector_dmr;
+    MYSQL_STMT *st_upsert_reflector_nxdn;
 
     // ---- Verbindungsaufbau + Statements (deine Snippets) ----
     bool connect() {
@@ -1081,6 +1129,8 @@ private:
             " updated_at DATETIME"
             ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;";
         if (mysql_query(conn, q3) != 0) dlog("[DB  ] create reflector failed: ", mysql_error(conn));
+        if (mysql_query(conn, "ALTER TABLE reflector ADD COLUMN IF NOT EXISTS nxdn VARCHAR(64) NULL") != 0)
+            dlog("[DB  ] add NXDN reflector column failed: ", mysql_error(conn));
 
         mysql_query(conn, "INSERT IGNORE INTO reflector (id,dstar,dmr,fusion,updated_at) "
                           "VALUES (1,NULL,NULL,NULL,NOW());");
@@ -1165,6 +1215,13 @@ private:
             dlog("[DB  ] prepare upsert reflector.dmr failed: ", mysql_error(conn));
             destroy_statements();
         }
+        const char* ps6 = "INSERT INTO reflector (id,nxdn,updated_at) VALUES (1,?,NOW()) "
+                          "ON DUPLICATE KEY UPDATE nxdn=VALUES(nxdn),updated_at=NOW()";
+        st_upsert_reflector_nxdn = mysql_stmt_init(conn);
+        if (!st_upsert_reflector_nxdn || mysql_stmt_prepare(st_upsert_reflector_nxdn, ps6, strlen(ps6)) != 0) {
+            dlog("[DB  ] prepare NXDN reflector failed: ", mysql_error(conn));
+            destroy_statements();
+        }
     }
 
     void destroy_statements() {
@@ -1173,6 +1230,7 @@ private:
         if (st_upsert_reflector_dstar) { mysql_stmt_close(st_upsert_reflector_dstar); st_upsert_reflector_dstar = nullptr; }
         if (st_upsert_reflector_fusion) { mysql_stmt_close(st_upsert_reflector_fusion); st_upsert_reflector_fusion = nullptr; }
         if (st_upsert_reflector_dmr) { mysql_stmt_close(st_upsert_reflector_dmr); st_upsert_reflector_dmr = nullptr; }
+        if (st_upsert_reflector_nxdn) { mysql_stmt_close(st_upsert_reflector_nxdn); st_upsert_reflector_nxdn = nullptr; }
     }
 
     // ---- Helpers für Binds ----
@@ -1288,7 +1346,7 @@ static uint64_t processFileFromOffset(const std::string& path,
 
         lastLine = line;
 
-        auto res = parser.processLine(line);
+        auto res = parser.processLine(line, std::filesystem::path(path).filename() == "NXDNGateway.log");
 
         // zuerst evtl. erzwungene Enden
         for (const auto& p : parser.takePending()) {
@@ -1325,7 +1383,7 @@ static void backfillReflectorsFromFile(const std::string& path, Database& db) {
     std::string line;
     while (std::getline(f, line)) {
         if (!line.empty() && line.back() == '\r') line.pop_back();
-        if (auto res = tmp.processLine(line)) {
+        if (auto res = tmp.processLine(line, std::filesystem::path(path).filename() == "NXDNGateway.log")) {
             // Pending (erzwungene Enden) verwerfen
             tmp.takePending();
             if (res->startEnd == "Info") {

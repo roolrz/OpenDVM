@@ -40,6 +40,10 @@ struct siteData {
     bool DstarStartOnBoot = true;
     bool DmrStartOnBoot = true;
     bool YsfStartOnBoot = true;
+    bool NxdnStartOnBoot = false;
+    std::string NxdnId;
+    std::string NxdnRAN;
+    std::string NxdnStatic;
 };
 
 class handleDVconfig {
@@ -61,4 +65,5 @@ private:
     renderConfigFile ircddb_renderer;
     renderConfigFile dmr_renderer;
     renderConfigFile ysf_renderer;
+    renderConfigFile nxdn_renderer;
 };

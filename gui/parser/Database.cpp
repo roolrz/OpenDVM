@@ -119,6 +119,10 @@ bool Database::createTableIfNeeded() noexcept {
                 "ADD COLUMN IF NOT EXISTS dstar_boot TINYINT NOT NULL DEFAULT 1, "
                 "ADD COLUMN IF NOT EXISTS dmr_boot TINYINT NOT NULL DEFAULT 1, "
                 "ADD COLUMN IF NOT EXISTS ysf_boot TINYINT NOT NULL DEFAULT 1, "
+                "ADD COLUMN IF NOT EXISTS nxdn_boot TINYINT NOT NULL DEFAULT 0, "
+                "ADD COLUMN IF NOT EXISTS nxdn_id VARCHAR(255) NOT NULL DEFAULT '0', "
+                "ADD COLUMN IF NOT EXISTS nxdn_ran VARCHAR(255) NOT NULL DEFAULT '1', "
+                "ADD COLUMN IF NOT EXISTS nxdn_static VARCHAR(255) NOT NULL DEFAULT '', "
                 "ADD COLUMN IF NOT EXISTS apply_error TEXT NULL");
 }
 
@@ -204,6 +208,10 @@ bool Database::writeSiteData(const siteData& s) noexcept {
     q += std::string("dstar_boot=") + (s.DstarStartOnBoot ? "1," : "0,");
     q += std::string("dmr_boot=") + (s.DmrStartOnBoot ? "1," : "0,");
     q += std::string("ysf_boot=") + (s.YsfStartOnBoot ? "1," : "0,");
+    q += std::string("nxdn_boot=") + (s.NxdnStartOnBoot ? "1," : "0,");
+    q += "nxdn_id='" + esc(s.NxdnId) + "',";
+    q += "nxdn_ran='" + esc(s.NxdnRAN) + "',";
+    q += "nxdn_static='" + esc(s.NxdnStatic) + "',";
     q += "apply_error='',";
     q += "reflector1='"        + esc(s.reflector1)  + "',";
     q += "ysf_suffix='"        + esc(s.Suffix)      + "',";
@@ -251,7 +259,7 @@ bool Database::readSiteData(siteData& s) noexcept {
         " dmr_password,"      // 17
         " dmr_name,"          // 18
         " is_new,"            // 19
-        " dstar_boot, dmr_boot, ysf_boot"
+        " dstar_boot, dmr_boot, ysf_boot, nxdn_boot, nxdn_id, nxdn_ran, nxdn_static"
         " FROM config_inbox WHERE id=1 LIMIT 1 FOR UPDATE";
 
     if (mysql_query(conn_, q) != 0) {
@@ -316,6 +324,10 @@ bool Database::readSiteData(siteData& s) noexcept {
     s.DstarStartOnBoot = get(20) == "1";
     s.DmrStartOnBoot = get(21) == "1";
     s.YsfStartOnBoot = get(22) == "1";
+    s.NxdnStartOnBoot = get(23) == "1";
+    s.NxdnId = get(24);
+    s.NxdnRAN = get(25);
+    s.NxdnStatic = get(26);
 
     // Result vor dem nächsten Query freigeben
     mysql_free_result(res);

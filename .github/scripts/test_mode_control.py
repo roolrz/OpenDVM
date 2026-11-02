@@ -60,7 +60,7 @@ class ModeControlTests(unittest.TestCase):
         self.assertTrue(controller.radio_flags()["dmr"])
 
     def test_temporary_start_does_not_enable_at_boot(self):
-        controller.dispatch(["configure", "1", "0", "1"])
+        controller.dispatch(["configure", "1", "0", "1", "0"])
         controller.dispatch(["start", "dmr"])
         self.assertTrue(controller.status()["dmr"]["running"])
         self.assertFalse(controller.status()["dmr"]["start_on_boot"])
@@ -68,11 +68,11 @@ class ModeControlTests(unittest.TestCase):
         self.assertFalse(controller.radio_flags()["dmr"])
 
     def test_save_applies_all_modes_in_one_modem_restart(self):
-        controller.dispatch(["configure", "0", "1", "0"])
-        self.assertEqual(controller.radio_flags(), {"dstar": False, "dmr": True, "ysf": False})
+        controller.dispatch(["configure", "0", "1", "0", "0"])
+        self.assertEqual(controller.radio_flags(), {"dstar": False, "dmr": True, "ysf": False, "nxdn": False})
         restarts = [call for call in self.calls if "restart" in call]
         self.assertEqual(restarts, [("--no-block", "restart", "mmdvmhost.service", "dmrgateway.service")])
-        self.assertEqual(controller.dispatch(["boot-status"]), {"dstar": False, "dmr": True, "ysf": False})
+        self.assertEqual(controller.dispatch(["boot-status"]), {"dstar": False, "dmr": True, "ysf": False, "nxdn": False})
 
     def test_one_mode_preserves_other_config_and_file_permissions(self):
         # A non-target section and comments survive the root helper's atomic edit.
@@ -112,7 +112,7 @@ class ModeControlTests(unittest.TestCase):
     def test_missing_unit_fails_before_mutation(self):
         self.records["ircddbgateway.service"]["LoadState"] = "not-found"
         with self.assertRaisesRegex(RuntimeError, "not installed"):
-            controller.dispatch(["configure", "0", "0", "0"])
+            controller.dispatch(["configure", "0", "0", "0", "0"])
         self.assertEqual(self.config.read_text(), self.original)
         self.assertTrue(all(call[0] == "show" for call in self.calls))
 
@@ -120,6 +120,26 @@ class ModeControlTests(unittest.TestCase):
         controller.write_radio_flags({"dmr": True})
         self.records["mmdvmhost.service"]["ActiveState"] = "failed"
         self.assertFalse(controller.status()["dmr"]["running"])
+
+    def test_nxdn_requires_own_id_before_start_or_boot_enable(self):
+        for arguments in (["start", "nxdn"], ["configure", "1", "1", "1", "1"]):
+            with self.subTest(arguments=arguments), self.assertRaisesRegex(ValueError, "NXDN ID"):
+                controller.dispatch(arguments)
+        self.assertEqual(self.config.read_text(), self.original)
+        self.assertTrue(all(call[0] == "show" for call in self.calls))
+
+    def test_nxdn_runtime_and_boot_policy_control_both_flags(self):
+        self.config.write_text(self.original.replace("[NXDN]\nEnable=0\nId=0", "[NXDN]\nEnable=0\nId=12345"))
+        controller.dispatch(["configure", "1", "1", "1", "0"])
+        controller.dispatch(["start", "nxdn"])
+        self.assertTrue(controller.status()["nxdn"]["running"])
+        self.assertFalse(controller.status()["nxdn"]["start_on_boot"])
+        controller.dispatch(["apply-boot"])
+        self.assertFalse(controller.radio_flags()["nxdn"])
+        controller.dispatch(["configure", "1", "1", "1", "1"])
+        controller.dispatch(["stop", "nxdn"])
+        self.assertFalse(controller.status()["nxdn"]["running"])
+        self.assertTrue(controller.status()["nxdn"]["start_on_boot"])
 
 
 if __name__ == "__main__":

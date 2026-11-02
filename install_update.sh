@@ -12,6 +12,7 @@ set -euo pipefail
 set -o errtrace
 umask 022
 source "$(dirname "${BASH_SOURCE[0]}")/scripts/install_controls.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/scripts/install_nxdn.sh"
 
 # Better diagnostics on failure
 trap 'code=$?; cmd=${BASH_COMMAND:-unknown}; echo "[ERROR] Exit $code while running: $cmd" 1>&2; exit $code' ERR
@@ -89,7 +90,7 @@ calc_jobs() {
 
 # Generic git clone + make build inside temp dir; optional install step
 build_from_git() {
-  local repo="$1" make_dir="$2" make_path="$3" install_cmd="$4"
+  local repo="$1" make_dir="$2" make_path="$3" install_cmd="$4" revision="${5:-}"
 
   install -d -m 755 "$BUILD_BASE"
   local name; name="$(basename "$repo" .git)"
@@ -98,12 +99,16 @@ build_from_git() {
   if [[ -d "$repo_dir/.git" ]]; then
     log "Updating $name in $repo_dir"
     git -C "$repo_dir" remote set-url origin "$repo"
-    git -C "$repo_dir" fetch --depth=1 origin
+    git -C "$repo_dir" fetch --depth=1 origin ${revision:+"$revision"}
     git -C "$repo_dir" reset --hard FETCH_HEAD
     git -C "$repo_dir" clean -fdx
   else
     log "Cloning $repo into $repo_dir"
     git clone --depth=1 "$repo" "$repo_dir"
+    if [[ -n "$revision" ]]; then
+      git -C "$repo_dir" fetch --depth=1 origin "$revision"
+      git -C "$repo_dir" reset --hard FETCH_HEAD
+    fi
   fi
 
   local jobs; jobs="$(calc_jobs "${JOBS_DESIRED:-$(nproc)}")"
@@ -136,7 +141,7 @@ base_packages() {
     libasound2-dev libfftw3-dev libgps-dev \
     libwxgtk3.2-dev logrotate curl ca-certificates \
     libmariadb-dev libmariadb-dev-compat mariadb-server \
-    libmosquitto-dev nlohmann-json3-dev \
+    libmosquitto-dev nlohmann-json3-dev mosquitto \
     apache2 php libapache2-mod-php php-mysql wget php-curl
   apt-get autoremove -y || true
   apt-get clean || true
@@ -204,6 +209,7 @@ install_hosts_and_tables() {
   /usr/local/sbin/opendvm-update-ysf-hosts --no-restart
   install_file "update_dstar_hosts.sh" "/usr/local/sbin/opendvm-update-dstar-hosts" 755
   /usr/local/sbin/opendvm-update-dstar-hosts --no-restart
+  install_nxdn_tables
   log "Fetching DMRIds.dat and RSSI.dat..."
   wget -q -O /usr/local/etc/DMRIds.dat https://database.radioid.net/static/user.csv
   # install from file because G4KLX's RSSI.dat is just an empty sample
@@ -252,6 +258,7 @@ systemd_enable_and_restart_all() {
   systemctl daemon-reload
   /usr/local/sbin/opendvm-mode-control initialize
   log "Enabling services..."
+  systemctl enable --now mosquitto.service || true
   systemctl enable mmdvmhost || true
   systemctl enable mmdvm-status.service || true
   systemctl enable mmdvm-DVconfig.service || true
@@ -260,6 +267,7 @@ systemd_enable_and_restart_all() {
   systemctl try-restart ysfgateway || true
   systemctl try-restart ircddbgateway || true
   systemctl try-restart dmrgateway || true
+  systemctl try-restart nxdngateway || true
   systemctl restart mmdvm-status.service || true
   systemctl restart mmdvm-DVconfig.service || true
   log "Services started."
@@ -280,6 +288,9 @@ main() {
 
   log "Checking serial link /dev/mmdvm..."
   check_serial_symlink
+  pause_block
+
+  install_nxdngateway
   pause_block
 
   install_hosts_and_tables

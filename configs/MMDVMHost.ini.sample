@@ -123,6 +123,7 @@ TXHang=5
 
 [NXDN]
 Enable=0
+Id=0
 RAN=1
 RemoteGateway=0
 TXHang=5
