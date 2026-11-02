@@ -198,6 +198,9 @@ def check_bm_regressions(api, request, sql, wait_for, start, stop, logs):
         browser.find_element(By.ID, "bmLoad").click()
         wait.until(lambda driver: driver.find_element(By.ID, "bmApply").is_enabled())
         assert "123456701" in browser.find_element(By.ID, "bmDevice").text
+        assert not browser.find_element(By.ID, "bmSlot0Row").is_displayed()
+        assert browser.find_element(By.ID, "bmSlot1Row").is_displayed()
+        assert browser.find_element(By.ID, "bmSlot2Row").is_displayed()
         assert browser.find_element(By.ID, "BmApiKey").get_attribute("value") == ""
         for slot, text in ((1, "91"), (2, "46001,46020")):
             element = browser.find_element(By.ID, "BmStatic" + str(slot))
