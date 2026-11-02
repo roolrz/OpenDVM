@@ -245,6 +245,8 @@ install_hosts_and_tables() {
   fi
   install_file "update_ysf_hosts.sh" "/usr/local/sbin/opendvm-update-ysf-hosts" 755
   /usr/local/sbin/opendvm-update-ysf-hosts --no-restart
+  install_file "update_dstar_hosts.sh" "/usr/local/sbin/opendvm-update-dstar-hosts" 755
+  /usr/local/sbin/opendvm-update-dstar-hosts --no-restart
   log "Fetching DMRIds.dat and RSSI.dat..."
   wget -q -O /usr/local/etc/DMRIds.dat https://database.radioid.net/static/user.csv
   # install from file because G4KLX's RSSI.dat is just an empty sample

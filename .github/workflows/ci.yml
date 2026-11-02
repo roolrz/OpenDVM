@@ -52,6 +52,9 @@ jobs:
       - name: Test YSF host list updates
         run: python3 .github/scripts/test_ysf_hosts.py
 
+      - name: Test D-Star host list updates
+        run: python3 .github/scripts/test_dstar_hosts.py
+
       - name: Compile status monitor and configuration service
         run: |
           (cd gui && ./compile.sh)
