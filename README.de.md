@@ -266,8 +266,7 @@ MMDVMHost. **Save & apply** speichert die Startauswahl und wendet sie sofort an.
 **Start** / **Stop** ändern nur den aktuellen Zustand; beim nächsten Boot gilt
 wieder die gespeicherte Auswahl. Jede Modusänderung startet den gemeinsamen
 MMDVMHost neu und unterbricht kurz alle Modi. Das Konfigurationspasswort wird für
-die Bedienung benötigt. YSF **CONNECT** / **DISCONNECT** steuert weiterhin die
-Reflektorverbindung. Einmal `sudo ./install_update.sh` ausführen, um die neuen
+die Bedienung benötigt. Einmal `sudo ./install_update.sh` ausführen, um die neuen
 Dienste und Berechtigungen zu installieren. Updates behalten die Startauswahl bei.
 
 NXDN wird mitinstalliert und ist zunächst deaktiviert. Im NXDN-Feld die eigene

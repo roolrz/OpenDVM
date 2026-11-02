@@ -272,7 +272,6 @@ The **Start** / **Stop** buttons act immediately and leave the saved boot policy
 unchanged. The next reboot restores the boot selection. Mode changes restart the
 shared MMDVMHost, briefly interrupting all modes; gateway connection status can
 take longer to settle. These controls use the Config Password entered on the page.
-The separate YSF **CONNECT** / **DISCONNECT** buttons control reflector linking.
 
 Run `sudo ./install_update.sh` once to install the mode controller, service hook
 and permissions. Updates preserve boot policy and avoid starting stopped gateways.
