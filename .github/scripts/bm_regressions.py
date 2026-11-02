@@ -94,6 +94,13 @@ def check_bm_regressions(api, request, sql, wait_for, start, stop, logs):
     server.socket = tls.wrap_socket(server.socket, server_side=True)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
+    # Verify DNS, proxy bypass and CA trust as the actual web-service user.
+    probe = subprocess.run(['curl', '--silent', '--show-error', '--max-time', '5',
+                            '--write-out', '%{http_code}',
+                            'https://api.brandmeister.network/v2/device/123456701/talkgroup'],
+                           capture_output=True, text=True, user='www-data', group='www-data')
+    if probe.returncode or not probe.stdout.endswith('403'):
+        raise RuntimeError(f'Local BM HTTPS preflight failed: {probe.stderr}; response: {probe.stdout}')
     host = Path("/etc/MMDVMHost.ini")
     gateway = Path("/etc/dmrgateway")
     host_original, gateway_original = host.read_text(), gateway.read_text()

@@ -98,6 +98,9 @@ def main():
     if os.geteuid() != 0 or not Path("/.dockerenv").exists():
         raise RuntimeError("Run this test as root inside a disposable Docker container.")
     LOGS.mkdir(exist_ok=True)
+    # The HTTPS BM fixture is local even when the runner provides proxy variables.
+    os.environ['NO_PROXY'] = '127.0.0.1,localhost,api.brandmeister.network'
+    os.environ['no_proxy'] = os.environ['NO_PROXY']
     try:
         subprocess.run(["install", "-d", "-o", "mysql", "-g", "mysql", "/run/mysqld"], check=True)
         start("mariadb", ["mariadbd", "--user=mysql", "--skip-networking"])

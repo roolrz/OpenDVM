@@ -102,8 +102,12 @@ class BmClient {
         if ($body !== null) curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($body, JSON_THROW_ON_ERROR));
         $output = curl_exec($ch);
         $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_errno($ch);
         curl_close($ch);
-        if ($output === false) throw new BmError('Cannot reach BrandMeister; check the connection and try refreshing');
+        if ($output === false) {
+            error_log("BM transport failed (cURL error $curlError)");
+            throw new BmError('Cannot reach BrandMeister; check the connection and try refreshing');
+        }
         if (in_array($status, [401, 403], true)) throw new BmError('BM rejected the API key or permission for this device', 401, 'BAD_API_KEY');
         if ($status < 200 || $status >= 300) throw new BmError("BrandMeister request failed (HTTP $status)");
         if ($method !== 'GET' && trim($output) === '') return null;
