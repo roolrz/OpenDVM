@@ -21,6 +21,7 @@ public:
 
     // Read site data (id=1) aus config_inbox in s
     bool readSiteData(struct siteData& s) noexcept;
+    bool completeApply(bool ok, const std::string& error) noexcept;
 
     // Last error text (empty if none)
     const std::string& lastError() const noexcept { return last_error_; }

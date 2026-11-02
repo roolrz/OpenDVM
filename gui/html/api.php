@@ -531,6 +531,10 @@ try {
         dmr_password   AS Password,
         dmr_name       AS Name,
         bm_api_key     AS BmApiKey,
+        dstar_boot     AS DstarStartOnBoot,
+        dmr_boot       AS DmrStartOnBoot,
+        ysf_boot       AS YsfStartOnBoot,
+        apply_error    AS apply_error,
         is_new         AS is_new,
         DATE_FORMAT(updated_at, '%Y-%m-%d %H:%i:%s') AS updated_at
       FROM config_inbox

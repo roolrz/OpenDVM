@@ -11,6 +11,7 @@
 set -euo pipefail
 set -o errtrace
 umask 022
+source "$(dirname "${BASH_SOURCE[0]}")/scripts/install_controls.sh"
 
 # Better diagnostics on failure
 trap 'code=$?; cmd=${BASH_COMMAND:-unknown}; echo "[ERROR] Exit $code while running: $cmd" 1>&2; exit $code' ERR
@@ -131,7 +132,7 @@ base_packages() {
   apt_update_once
   apt-get upgrade -y
   apt_install_batch \
-    git sudo util-linux build-essential cmake libusb-1.0-0-dev \
+    git sudo python3 util-linux build-essential cmake libusb-1.0-0-dev \
     libasound2-dev libfftw3-dev libgps-dev \
     libwxgtk3.2-dev logrotate curl ca-certificates \
     libmariadb-dev libmariadb-dev-compat mariadb-server \
@@ -159,8 +160,14 @@ Cmnd_Alias MMDVM_RESTARTS = \\
   $sysctl restart dmrgateway.service, \\
   $sysctl restart ircddbgateway.service, \\
   $sysctl restart mmdvm-status.service, \\
-  $sysctl restart mmdvm-DVconfig.service
+  $sysctl restart mmdvm-DVconfig.service, \\
+  $sysctl try-restart mmdvmhost.service, \\
+  $sysctl try-restart ysfgateway.service, \\
+  $sysctl try-restart dmrgateway.service, \\
+  $sysctl try-restart ircddbgateway.service
 mmdvm ALL=(root) NOPASSWD: MMDVM_RESTARTS
+mmdvm ALL=(root) NOPASSWD: /usr/local/sbin/opendvm-mode-control
+www-data ALL=(root) NOPASSWD: /usr/local/sbin/opendvm-mode-control
 EOF
   chmod 440 "$file"
 }
@@ -214,6 +221,7 @@ install_logrotate_snippets() {
 
 install_gui_and_parser() {
   log "Installing GUI & Parser..."
+  install_mode_controls
   cp -r gui/html/* /var/www/html
   ( cd gui && ./compile.sh )
   ( cd gui/parser && make clean && make )
@@ -242,18 +250,16 @@ EOSQL
 systemd_enable_and_restart_all() {
   log "Reloading systemd daemon..."
   systemctl daemon-reload
+  /usr/local/sbin/opendvm-mode-control initialize
   log "Enabling services..."
   systemctl enable mmdvmhost || true
-  systemctl enable ysfgateway || true
-  systemctl enable ircddbgateway || true
-  systemctl enable dmrgateway || true
   systemctl enable mmdvm-status.service || true
   systemctl enable mmdvm-DVconfig.service || true
   log "Services enabled."
-  systemctl restart mmdvmhost || true
-  systemctl restart ysfgateway || true
-  systemctl restart ircddbgateway || true
-  systemctl restart dmrgateway || true
+  systemctl try-restart mmdvmhost || true
+  systemctl try-restart ysfgateway || true
+  systemctl try-restart ircddbgateway || true
+  systemctl try-restart dmrgateway || true
   systemctl restart mmdvm-status.service || true
   systemctl restart mmdvm-DVconfig.service || true
   log "Services started."

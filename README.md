@@ -258,10 +258,25 @@ The most important settings can be configured in the SETUP window:
    * Set Duplex = 0 (set to 1 ONLY if you are using a repeater board)
    * Set RX and TX frequencies. For **Hotspots use the same RX and TX frequency**, otherwise DMR networking will not work. For **Repeaters use different RX and TX frequencies**.
    * Enter your Brandmeister password (as configured in SelfCare on the BM Dashboard)
-   * Enter the Config Password (default: setuppassword). You can define your own password by editing the file save_config.php (you find it in folder: ./gui/html, after editing copy it to /var/www/html).
-   * Click "SAVE"
+   * Enter the Config Password (default: `setuppassword`). To change it, run `sudoedit /etc/opendvm/config-password`. Installation migrates an existing password from `save_config.php`; updates preserve it.
+   * Choose **Start on boot** for D-Star, DMR and YSF, then click **Save & apply**.
 
    If you receive a green confirmation message, the configuration has been successfully stored.
+
+Each mode's **Start on boot** checkbox controls both its gateway service and its
+RF/network `Enable` flags in MMDVMHost. **Save & apply** saves the boot policy and
+immediately starts or stops the selected modes. The page waits for the backend
+to apply the settings and reports failures.
+
+The **Start** / **Stop** buttons act immediately and leave the saved boot policy
+unchanged. The next reboot restores the boot selection. Mode changes restart the
+shared MMDVMHost, briefly interrupting all modes; gateway connection status can
+take longer to settle. These controls use the Config Password entered on the page.
+The separate YSF **CONNECT** / **DISCONNECT** buttons control reflector linking.
+
+Run `sudo ./install_update.sh` once to install the mode controller, service hook
+and permissions. Updates preserve boot policy and avoid starting stopped gateways.
+On the first update, a mode already disabled in MMDVMHost stays disabled at boot.
 
 You can still manually edit the generated configuration files if needed — although this is rarely necessary. The only setting you might need to adjust is the MMDVM modem baud rate. By default, it’s set to 115200 Bd, which works for most MMDVM boards. However, some boards (for example, Repeater Builder boards) may require 460800 Bd — see the [Modem] section in /etc/MMDVMHost.ini.
 

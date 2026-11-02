@@ -9,7 +9,8 @@ function response($ok, $payload = []) {
   exit;
 }
 
-$CONFIG_PASSWORD = 'setuppassword';
+require_once __DIR__ . '/config_auth.php';
+$CONFIG_PASSWORD = opendvm_config_password();
 
 // Nur POST akzeptieren
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
@@ -30,7 +31,7 @@ $expected = [
   'Callsign','Module','Id','Duplex','RXFrequency','TXFrequency',
   'Latitude','Longitude','Height','Location','Description','URL',
   'reflector1','reflector_module','Suffix','Startup','Options',
-  'Address','Password','Name', 'BmApiKey'
+  'Address','Password','Name', 'BmApiKey', 'DstarStartOnBoot', 'DmrStartOnBoot', 'YsfStartOnBoot'
 ];
 
 // collect
@@ -41,6 +42,9 @@ foreach (['Latitude','Longitude'] as $k) { if ($data[$k] !== null) $data[$k] = s
 
 // validate
 $errors = [];
+foreach (['DstarStartOnBoot','DmrStartOnBoot','YsfStartOnBoot'] as $key) {
+  if ($data[$key] !== null && !in_array($data[$key], ['0','1'], true)) $errors[] = "$key must be 0 or 1";
+}
 if (empty($data['Callsign']) || !preg_match('/^[A-Za-z0-9\/]{3,}$/', $data['Callsign'])) $errors[] = 'Invalid callsign';
 foreach (['RXFrequency','TXFrequency'] as $hz) {
   if ($data[$hz] === null || $data[$hz] === '' || !preg_match('/^\d+$/', $data[$hz])) $errors[] = "$hz must be an integer number (Hz)";
@@ -74,6 +78,14 @@ try {
     ]
   );
 
+  $pdo->beginTransaction();
+  $current = $pdo->query('SELECT is_new, dstar_boot, dmr_boot, ysf_boot FROM config_inbox WHERE id=1 FOR UPDATE')->fetch();
+  if ($current && in_array($current['is_new'], ['GUI', 'APPLYING'], true)) {
+    $pdo->rollBack();
+    http_response_code(409);
+    response(false, ['error' => 'A configuration change is already pending']);
+  }
+
   // kein CREATE TABLE, keine Initialzeile – das erledigt das Backend
   // Single-row Upsert (id=1) + mark as new
   $sql = "
@@ -82,13 +94,13 @@ try {
       location, description, url, reflector1, 
       ysf_suffix, ysf_startup, ysf_options,
       dmr_address, dmr_password, dmr_name,bm_api_key,
-      is_new
+      dstar_boot, dmr_boot, ysf_boot, apply_error, is_new
     ) VALUES (
       1, :callsign, :module, :dmr_id, :duplex, :rxfreq, :txfreq, :latitude, :longitude, :height,
       :location, :description, :url, :reflector1, 
       :ysf_suffix, :ysf_startup, :ysf_options,
       :dmr_address, :dmr_password, :dmr_name,:bm_api_key,
-      'GUI'
+      :dstar_boot, :dmr_boot, :ysf_boot, '', 'GUI'
     )
     ON DUPLICATE KEY UPDATE
       callsign         = VALUES(callsign),
@@ -111,6 +123,10 @@ try {
       dmr_password     = VALUES(dmr_password),
       dmr_name         = VALUES(dmr_name),
       bm_api_key       = VALUES(bm_api_key),
+      dstar_boot       = VALUES(dstar_boot),
+      dmr_boot         = VALUES(dmr_boot),
+      ysf_boot         = VALUES(ysf_boot),
+      apply_error      = '',
       is_new           = 'GUI',
       updated_at       = CURRENT_TIMESTAMP
   ";
@@ -137,7 +153,11 @@ try {
     ':dmr_password'     => $data['Password'] ?: null,
     ':dmr_name'         => $data['Name'] ?: null,
     ':bm_api_key'       => ($data['BmApiKey'] ?? '') ?: null,
+    ':dstar_boot'       => (int)($data['DstarStartOnBoot'] ?? $current['dstar_boot'] ?? 1),
+    ':dmr_boot'         => (int)($data['DmrStartOnBoot'] ?? $current['dmr_boot'] ?? 1),
+    ':ysf_boot'         => (int)($data['YsfStartOnBoot'] ?? $current['ysf_boot'] ?? 1),
   ]);
+  $pdo->commit();
 
   $count = 0;
   foreach ($expected as $k) {

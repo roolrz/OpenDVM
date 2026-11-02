@@ -1,0 +1,179 @@
+#!/usr/bin/python3
+"""Privileged, allowlisted mode controls. No caller-supplied commands or paths."""
+
+import configparser
+import fcntl
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+
+
+SYSTEMCTL = "/usr/bin/systemctl"
+HOST_CONFIG = Path("/etc/MMDVMHost.ini")
+LOCK = Path("/run/opendvm-mode-control.lock")
+INITIALIZED = Path("/etc/opendvm/mode-control.initialized")
+MODES = {
+    "dstar": ("ircddbgateway.service", "D-Star", "D-Star Network"),
+    "dmr": ("dmrgateway.service", "DMR", "DMR Network"),
+    "ysf": ("ysfgateway.service", "System Fusion", "System Fusion Network"),
+}
+
+
+def systemctl(*arguments):
+    result = subprocess.run([SYSTEMCTL, *arguments], capture_output=True, text=True, timeout=15)
+    if result.returncode:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "Service operation failed")
+    return result.stdout
+
+
+def units():
+    text = systemctl("show", "--no-pager", "--property=Id,LoadState,ActiveState,SubState,UnitFileState",
+                     "mmdvmhost.service", *(item[0] for item in MODES.values()))
+    records = {}
+    for block in text.strip().split("\n\n"):
+        record = dict(line.split("=", 1) for line in block.splitlines() if "=" in line)
+        if "Id" in record:
+            records[record["Id"]] = record
+    for name in ["mmdvmhost.service", *(item[0] for item in MODES.values())]:
+        if records.get(name, {}).get("LoadState") != "loaded":
+            raise RuntimeError(f"Service is not installed: {name}")
+    return records
+
+
+def radio_flags():
+    parser = configparser.ConfigParser(interpolation=None, strict=False)
+    parser.optionxform = str
+    with HOST_CONFIG.open() as source:
+        parser.read_file(source)
+    return {mode: all(parser.get(section, "Enable", fallback="0").strip() == "1"
+                      for section in sections[1:]) for mode, sections in MODES.items()}
+
+
+def write_radio_flags(flags):
+    text = HOST_CONFIG.read_text()
+    sections = {section: enabled for mode, enabled in flags.items() for section in MODES[mode][1:]}
+    found = set()
+    enabled_keys = set()
+    current = None
+    output = []
+    for line in text.splitlines(keepends=True):
+        header = re.match(r"^\s*\[([^]]+)\]\s*$", line)
+        if header:
+            if current in sections and current not in enabled_keys:
+                output.append(f"Enable={int(sections[current])}\n")
+                enabled_keys.add(current)
+            current = header[1]
+            found.add(current)
+        if current in sections and re.match(r"^\s*Enable\s*=", line):
+            output.append(f"Enable={int(sections[current])}\n")
+            enabled_keys.add(current)
+        else:
+            output.append(line)
+    if current in sections and current not in enabled_keys:
+        output.append(f"\nEnable={int(sections[current])}\n")
+    for section in sections.keys() - found:
+        output.append(f"\n[{section}]\nEnable={int(sections[section])}\n")
+    updated = "".join(output)
+    if updated == text:
+        return
+    metadata = HOST_CONFIG.stat()
+    descriptor, temporary = tempfile.mkstemp(prefix=".opendvm-modes-", dir=HOST_CONFIG.parent)
+    try:
+        with os.fdopen(descriptor, "w") as destination:
+            destination.write(updated)
+            destination.flush()
+            os.fsync(destination.fileno())
+            os.fchmod(destination.fileno(), stat.S_IMODE(metadata.st_mode))
+            os.fchown(destination.fileno(), metadata.st_uid, metadata.st_gid)
+        shutil.copy2(HOST_CONFIG, str(HOST_CONFIG) + ".mode-control.bak")
+        os.replace(temporary, HOST_CONFIG)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+
+
+def boot_flags(records):
+    return {mode: records[item[0]].get("UnitFileState") == "enabled" for mode, item in MODES.items()}
+
+
+def status():
+    records = units()
+    flags = radio_flags()
+    modem = records["mmdvmhost.service"]["ActiveState"]
+    result = {}
+    for mode, item in MODES.items():
+        record = records[item[0]]
+        result[mode] = {
+            "start_on_boot": record.get("UnitFileState") == "enabled",
+            "rf_enabled": flags[mode], "gateway_state": record["ActiveState"],
+            "modem_state": modem,
+            "running": flags[mode] and modem == "active" and record["ActiveState"] == "active",
+        }
+    return result
+
+
+def apply_runtime(flags):
+    write_radio_flags(flags)
+    stopped = [MODES[mode][0] for mode, enabled in flags.items() if not enabled]
+    if stopped:
+        systemctl("--no-block", "stop", *stopped)
+    # One transaction keeps the gateways ordered after the shared modem host.
+    systemctl("--no-block", "restart", "mmdvmhost.service",
+              *(MODES[mode][0] for mode, enabled in flags.items() if enabled))
+
+
+def dispatch(arguments):
+    if arguments == ["status"]:
+        return {"ok": True, "modes": status()}
+    if arguments == ["boot-status"]:
+        return boot_flags(units())
+    if arguments == ["initialize"]:
+        if not INITIALIZED.exists():
+            records = units()
+            flags = radio_flags()
+            for mode, enabled in boot_flags(records).items():
+                if enabled and not flags[mode]:
+                    systemctl("disable", MODES[mode][0])
+            INITIALIZED.parent.mkdir(mode=0o750, exist_ok=True)
+            INITIALIZED.write_text("initialized\n")
+            INITIALIZED.chmod(0o600)
+        return {"ok": True}
+    if arguments == ["apply-boot"]:
+        write_radio_flags(boot_flags(units()))
+        return {"ok": True}
+    if len(arguments) == 2 and arguments[0] in ("start", "stop") and arguments[1] in MODES:
+        units()
+        apply_runtime({arguments[1]: arguments[0] == "start"})
+        return {"ok": True, "modes": status()}
+    if len(arguments) == 4 and arguments[0] == "configure" and all(value in ("0", "1") for value in arguments[1:]):
+        flags = dict(zip(MODES, (value == "1" for value in arguments[1:])))
+        # Confirm services are available before changing boot policy or RF flags.
+        units()
+        for mode, enabled in flags.items():
+            systemctl("enable" if enabled else "disable", MODES[mode][0])
+        apply_runtime(flags)
+        return {"ok": True, "modes": status()}
+    raise ValueError("Invalid mode-control action")
+
+
+def main():
+    try:
+        if os.geteuid() != 0:
+            raise PermissionError("Mode control must run through the installed sudo rule")
+        with LOCK.open("a") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            result = dispatch(sys.argv[1:])
+        print(json.dumps(result))
+    except Exception as error:
+        print(json.dumps({"ok": False, "error": str(error)}))
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

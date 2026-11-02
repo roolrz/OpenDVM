@@ -116,7 +116,7 @@ class DStarUpdateTests(unittest.TestCase):
         for name, body in VALID.items():
             self.assertEqual((self.dest / name).read_bytes(), body)
             self.assertEqual((self.dest / f"{name}.bak").read_bytes(), b"old host list\n")
-        self.assertEqual(self.restarts.read_text().splitlines(), ["restart ircddbgateway.service"])
+        self.assertEqual(self.restarts.read_text().splitlines(), ["try-restart ircddbgateway.service"])
         self.assert_no_staging()
 
     def test_unchanged_skips_restart_and_preserves_backups(self):
