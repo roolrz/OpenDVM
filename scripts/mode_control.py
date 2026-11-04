@@ -12,6 +12,10 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import radio_config as radio
 
 
 SYSTEMCTL = "/usr/bin/systemctl"
@@ -107,19 +111,32 @@ def status():
     flags = radio_flags()
     modem = records["mmdvmhost.service"]["ActiveState"]
     result = {}
+    bindings = radio.read_config()['bindings']
+    radio_status = {}
+    if any(bindings.values()):
+        try:
+            report = json.loads((radio.RUNTIME / 'status.json').read_text())
+            if time.time() - report['updated_at'] < 10:
+                radio_status = report['modes']
+        except (OSError, ValueError, KeyError):
+            pass
     for mode, item in MODES.items():
         record = records[item[0]]
+        board = radio_status.get(mode, {})
+        board_state = board.get('state', 'starting') if any(bindings.values()) and modem == 'active' else modem
         result[mode] = {
             "start_on_boot": record.get("UnitFileState") == "enabled",
             "rf_enabled": flags[mode], "gateway_state": record["ActiveState"],
-            "modem_state": modem,
-            "running": flags[mode] and modem == "active" and record["ActiveState"] == "active",
+            "modem_state": board_state,
+            "device": board.get('device', bindings[mode] or radio.legacy_device()),
+            "running": flags[mode] and board_state == "active" and record["ActiveState"] == "active",
         }
     return result
 
 
 def apply_runtime(flags):
     validate_flags(flags)
+    radio.sync_gateway_info()
     write_radio_flags(flags)
     stopped = [MODES[mode][0] for mode, enabled in flags.items() if not enabled]
     if stopped:
@@ -139,6 +156,23 @@ def validate_flags(flags):
 
 
 def dispatch(arguments):
+    if arguments == ['radios']:
+        return radio.snapshot()
+    if arguments == ['configure-radios']:
+        data = radio.validate(json.loads(sys.stdin.read(65537)))
+        units()
+        previous = radio.RADIO_CONFIG.read_text() if radio.RADIO_CONFIG.exists() else None
+        radio.atomic_write(radio.RADIO_CONFIG, json.dumps(data, indent=2) + '\n')
+        try:
+            apply_runtime(radio_flags())
+        except Exception:
+            if previous is None:
+                radio.RADIO_CONFIG.unlink(missing_ok=True)
+            else:
+                radio.atomic_write(radio.RADIO_CONFIG, previous)
+            radio.sync_gateway_info(force=True)
+            raise
+        return radio.snapshot()
     if arguments == ["status"]:
         return {"ok": True, "modes": status()}
     if arguments == ["boot-status"]:
@@ -162,6 +196,7 @@ def dispatch(arguments):
         except ValueError:
             flags["nxdn"] = False
         write_radio_flags(flags)
+        radio.sync_gateway_info()
         return {"ok": True}
     if len(arguments) == 2 and arguments[0] in ("start", "stop") and arguments[1] in MODES:
         units()
