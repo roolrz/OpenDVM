@@ -59,8 +59,32 @@ def check_radio_bindings(api, request, wait_for, start, stop, logs):
     browser = webdriver.Chrome(service=Service('/usr/bin/chromedriver'), options=options)
     wait = WebDriverWait(browser, 20)
     try:
+        # The selectors remain visible even if the external controller script
+        # fails to load; an explicit message replaces an invisible feature.
+        browser.execute_cdp_cmd('Network.enable', {})
+        browser.execute_cdp_cmd('Network.setBlockedURLs', {'urls': ['*radio-bindings.js*']})
+        browser.get('http://127.0.0.1:8080/setup.html')
+        for mode in bindings:
+            selector = browser.find_element(By.ID, mode + 'Board')
+            assert selector.is_displayed() and not selector.is_enabled()
+        assert 'could not load' in browser.find_element(By.ID, 'radioResult').text
+        browser.execute_cdp_cmd('Network.setBlockedURLs', {'urls': []})
+        browser.execute_cdp_cmd('Page.addScriptToEvaluateOnNewDocument', {'source': '''
+            window.__bmBusy = true;
+            setTimeout(() => { window.__bmBusy = false; }, 300);
+            window.__radioScanAttempts = 0;
+            const originalFetch = window.fetch;
+            window.fetch = function(url, options) {
+                if (String(url).includes('mode_control.php?q=radios') &&
+                    ++window.__radioScanAttempts === 1) {
+                    return Promise.reject(new Error('Temporary USB scan failure'));
+                }
+                return originalFetch.call(this, url, options);
+            };
+        '''})
         browser.get('http://127.0.0.1:8080/setup.html')
         wait.until(lambda driver: driver.find_element(By.ID, 'radioApply').is_enabled())
+        assert browser.execute_script('return window.__radioScanAttempts') == 2
         assert Select(browser.find_element(By.ID, 'ysfBoard')).first_selected_option.get_attribute('value') == devices[0]
         assert len(browser.find_elements(By.CSS_SELECTOR, '.radio-profile')) == 2
         assert 'not connected' in Select(browser.find_element(By.ID, 'ysfBoard')).first_selected_option.text

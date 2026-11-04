@@ -282,6 +282,12 @@
           <button type="button" data-action="start" disabled>Start</button>
           <button type="button" data-action="stop" disabled>Stop</button>
         </div>
+        <div class="field radio-binding">
+          <label for="dstarBoard">Hotspot board</label>
+          <select id="dstarBoard" disabled>
+            <option value="">Loading boards…</option>
+          </select>
+        </div>
         <div class="row">
           <div class="field">
             <label for="reflector1">reflector1</label>
@@ -303,6 +309,12 @@
           <output id="ysfState" aria-live="polite">Loading…</output>
           <button type="button" data-action="start" disabled>Start</button>
           <button type="button" data-action="stop" disabled>Stop</button>
+        </div>
+        <div class="field radio-binding">
+          <label for="ysfBoard">Hotspot board</label>
+          <select id="ysfBoard" disabled>
+            <option value="">Loading boards…</option>
+          </select>
         </div>
         <div class="row">
           <div class="field">
@@ -334,6 +346,12 @@
           <output id="dmrState" aria-live="polite">Loading…</output>
           <button type="button" data-action="start" disabled>Start</button>
           <button type="button" data-action="stop" disabled>Stop</button>
+        </div>
+        <div class="field radio-binding">
+          <label for="dmrBoard">Hotspot board</label>
+          <select id="dmrBoard" disabled>
+            <option value="">Loading boards…</option>
+          </select>
         </div>
         <div class="row">
           <div class="field">
@@ -407,6 +425,12 @@
           <output id="nxdnState" aria-live="polite">Loading…</output>
           <button type="button" data-action="start" disabled>Start</button>
           <button type="button" data-action="stop" disabled>Stop</button>
+        </div>
+        <div class="field radio-binding">
+          <label for="nxdnBoard">Hotspot board</label>
+          <select id="nxdnBoard" disabled>
+            <option value="">Loading boards…</option>
+          </select>
         </div>
         <div class="row">
           <div class="field">
@@ -975,6 +999,7 @@
     })();
 
   </script>
-  <script src="js/radio-bindings.js"></script>
+  <script src="js/radio-bindings.js?v=2"
+    onerror="document.getElementById('radioResult').textContent = 'Board controls could not load. Refresh this page or update OpenDVM.';"></script>
 </body>
 </html>

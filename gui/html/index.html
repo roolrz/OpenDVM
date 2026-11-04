@@ -432,31 +432,6 @@
       }
 
       /* Reflector Statusfarben */
-      .ysf-controls {
-        grid-column: 1 / -1;
-        display: grid;
-        gap: 8px;
-        margin-top: 10px;
-        min-width: 0;
-      }
-      .ysf-controls label { font-size: 12px; color: var(--muted); }
-      .ysf-controls input, .ysf-controls button {
-        min-width: 0;
-        padding: 8px 10px;
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        background: var(--tile-alt);
-        color: var(--fg);
-        font: inherit;
-      }
-      .ysf-controls input { width: 100%; }
-      .ysf-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-      .ysf-controls button { cursor: pointer; }
-      .ysf-controls button:disabled { opacity: .5; cursor: wait; }
-      .ysf-controls :focus-visible { outline: 2px solid #ffc857; outline-offset: 2px; }
-      .ysf-controls output { font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
-      .ysf-controls output.error { color: #ff9ba6; }
-
       .refl-item .v {
         transition: color 0.2s ease, text-shadow 0.2s ease;
       }
@@ -657,19 +632,6 @@
             <div class="refl-item refl-item--grid" id="fusionRow">
               <span class="k">Fusion:</span><span id="refl-fusion" class="v">----</span>
               <div id="ysf-options" class="dtmf-note" style="display:none"></div>
-              <form id="ysf-controls" class="ysf-controls">
-                <label for="ysf-reflector">YSF reflector ID</label>
-                <input id="ysf-reflector" name="reflector" inputmode="numeric"
-                  pattern="[0-9]{5}" maxlength="5" placeholder="e.g. 46004" />
-                <label for="ysf-password">Config Password</label>
-                <input id="ysf-password" name="ConfigPassword" type="password"
-                  autocomplete="current-password" required />
-                <div class="ysf-actions">
-                  <button type="submit">Connect</button>
-                  <button type="button" id="ysf-disconnect">Disconnect</button>
-                </div>
-                <output id="ysf-command-status" role="status" aria-live="polite"></output>
-              </form>
             </div>
             <div class="refl-item refl-item--grid" id="nxdnRow">
               <span class="k">NXDN:</span><span id="refl-nxdn" class="v">----</span>
@@ -1141,59 +1103,6 @@
           console.error(e);
         }
       }
-
-      const ysfControls = document.getElementById('ysf-controls');
-      let ysfCommandPending = false;
-
-      async function sendYsfCommand(command) {
-        if (ysfCommandPending) return;
-        const reflector = document.getElementById('ysf-reflector');
-        const password = document.getElementById('ysf-password');
-        const status = document.getElementById('ysf-command-status');
-        status.classList.remove('error');
-        if (!password.reportValidity()) return;
-        if (command === 'connect' && !/^[0-9]{5}$/.test(reflector.value.trim())) {
-          status.textContent = 'Enter a five-digit YSF reflector ID.';
-          status.classList.add('error');
-          reflector.focus();
-          return;
-        }
-        const body = new URLSearchParams({cmd: command, ConfigPassword: password.value});
-        if (command === 'connect') body.set('reflector', reflector.value.trim());
-        ysfCommandPending = true;
-        const buttons = ysfControls.querySelectorAll('button');
-        buttons.forEach(button => { button.disabled = true; });
-        status.textContent = 'Sending…';
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 10000);
-        try {
-          const response = await fetch('ysf_command.php', {
-            method: 'POST', body, signal: controller.signal,
-          });
-          const result = await response.json();
-          if (!response.ok || !result.ok) throw new Error(result.error || 'Command failed');
-          status.textContent = command === 'connect'
-            ? 'Connect request sent. Check the Fusion status above.'
-            : 'Disconnect request sent. Check the Fusion status above.';
-          loadReflector();
-        } catch (error) {
-          status.textContent = error.name === 'AbortError'
-            ? 'Request timed out. Check the Fusion status before retrying.'
-            : error.message;
-          status.classList.add('error');
-        } finally {
-          clearTimeout(timeout);
-          password.value = '';
-          ysfCommandPending = false;
-          buttons.forEach(button => { button.disabled = false; });
-        }
-      }
-
-      ysfControls.addEventListener('submit', event => {
-        event.preventDefault();
-        sendYsfCommand('connect');
-      });
-      document.getElementById('ysf-disconnect').addEventListener('click', () => sendYsfCommand('disconnect'));
 
       function renderYsfOptions(cfg) {
         const el = document.getElementById("ysf-options");
