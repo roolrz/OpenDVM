@@ -885,7 +885,7 @@ void upsertStatus(const std::string& mode,
         if (!ensure_conn() || !st_upsert_status) return;
 
         MYSQL_BIND b[9]{};
-        int rowId = 1; // Legacy summary plus one persistent row per DMR timeslot.
+        int rowId = 1; // Summary plus independent protocol/timeslot activity.
         b[0].buffer_type = MYSQL_TYPE_LONG;
         b[0].buffer = &rowId;
         // 1) mode
@@ -923,10 +923,13 @@ void upsertStatus(const std::string& mode,
         if (mysql_stmt_execute(st_upsert_status) != 0) {
             dlog("[DB  ] exec upsert status failed: ", mysql_stmt_error(st_upsert_status));
         }
-        if (mode == "DMR" && slot && (*slot == 1 || *slot == 2)) {
-            rowId = *slot + 1;
+        if (mode == "DMR" && slot && (*slot == 1 || *slot == 2)) rowId = *slot + 1;
+        else if (mode == "D-Star") rowId = 4;
+        else if (mode == "YSF") rowId = 5;
+        else if (mode == "NXDN") rowId = 6;
+        if (rowId != 1) {
             if (mysql_stmt_execute(st_upsert_status) != 0) {
-                dlog("[DB  ] exec DMR slot status failed: ", mysql_stmt_error(st_upsert_status));
+                dlog("[DB  ] exec protocol status failed: ", mysql_stmt_error(st_upsert_status));
             }
         }
     }
@@ -992,7 +995,7 @@ void insertLastHeard(const std::string& callsign,
             );
         } else if (r.startEnd == "Mode") {
             if (r.mode == "Idle") {
-                if (ensure_conn()) mysql_query(conn, "UPDATE status SET active=0 WHERE id IN (2,3)");
+                if (ensure_conn()) mysql_query(conn, "UPDATE status SET active=0 WHERE id IN (2,3,4,5,6)");
                 // Nur Idle: Status auf inactive setzen und Felder leeren
                 upsertStatus(
                     r.mode, "", std::nullopt,std::nullopt,

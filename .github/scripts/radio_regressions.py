@@ -108,8 +108,9 @@ def check_radio_bindings(api, request, wait_for, start, stop, logs):
     append(paths[0], 'Mode set to Idle')
     assert len(usb_calls()) == 1
     assert any(int(slot['slot']) == 2 and slot['active'] for slot in api('status')['slots'])
-    append(paths[1], 'YSF, received RF end of transmission from DL2USB to DG-ID 0, 4.0 seconds, BER: 0.1%')
     append(paths[2], 'DMR Slot 2, received network end of voice transmission from DL3USB to TG 46001, 4.0 seconds, BER: 0.0%')
+    assert api('status')['mode'] == 'YSF' and api('status')['active']
+    append(paths[1], 'YSF, received RF end of transmission from DL2USB to DG-ID 0, 4.0 seconds, BER: 0.1%')
     calls = {row['callsign']: row for row in api('lastheard')}
     assert all(name in calls for name in ('DL1USB', 'DL2USB', 'DL3USB'))
     assert float(calls['DL2USB']['duration']) == 4.0
