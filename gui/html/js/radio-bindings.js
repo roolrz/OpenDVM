@@ -22,18 +22,8 @@
     result.textContent = 'Board changes not applied. Use Apply USB bindings below.';
   };
   modes.forEach(mode => {
-    const panel = document.querySelector(`.mode-controls[data-mode="${mode}"]`);
-    const field = document.createElement('div');
-    field.className = 'field radio-binding';
-    const label = document.createElement('label');
-    label.htmlFor = mode + 'Board';
-    label.textContent = 'Hotspot board';
-    const select = document.createElement('select');
-    select.id = mode + 'Board';
-    select.disabled = true;
+    const select = document.getElementById(mode + 'Board');
     select.addEventListener('change', () => { dirty(); renderProfiles(); });
-    field.append(label, select);
-    panel.after(field);
     selects[mode] = select;
   });
   window.__updateRadioControls = otherBusy => {
@@ -114,8 +104,10 @@
         : data.devices.length ? 'USB boards loaded. Select a board for each mode above.'
         : 'No USB boards with stable serial paths detected. Current hotspot settings are still available.';
       if (save && window.__invalidateBm) window.__invalidateBm();
+      return true;
     } catch (error) {
       result.textContent = error.message;
+      return false;
     } finally {
       busy = false;
       modeBusy = false;
@@ -124,5 +116,19 @@
   }
   reload.addEventListener('click', () => run(false));
   apply.addEventListener('click', () => run(true));
-  run(false);
+  async function initialize() {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      // Other settings operations can temporarily hold the shared controls.
+      // Do not silently drop the initial load, or overwrite a successful reload.
+      while (!loaded && (busy || saving || modeBusy || window.__bmBusy)) {
+        await new Promise(resolve => setTimeout(resolve, 250));
+      }
+      if (loaded || await run(false)) return;
+      if (attempt < 2) {
+        result.textContent = 'USB board scan failed; retrying automatically…';
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+  }
+  initialize();
 })();
