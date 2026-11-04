@@ -25,6 +25,17 @@ function bm_context(PDO $pdo, bool $lock = false): array {
     // Use the ID actually presented to BM, including a configured hotspot ESSID.
     $identity = trim((string)($gateway['DMR Network 1']['Id'] ?? ''));
     $duplex = (string)($host['General']['Duplex'] ?? '');
+    if (is_file('/etc/opendvm-radios.json')) {
+        $radios = json_decode((string)file_get_contents('/etc/opendvm-radios.json'), true);
+        $device = $radios['bindings']['dmr'] ?? '';
+        if ($device === '') $device = $host['Modem']['UARTPort'] ?? $host['Modem']['Port'] ?? '/dev/mmdvm';
+        foreach (($radios['profiles'] ?? []) as $path => $profile) {
+            if ($path === $device || (realpath($path) !== false && realpath($path) === realpath($device))) {
+                $duplex = (string)$profile['duplex'];
+                break;
+            }
+        }
+    }
     if (!preg_match('/^[0-9]{6,9}$/D', $identity) || (int)$identity === 0 || !in_array($duplex, ['0', '1'], true)) {
         throw new BmError('Saved DMRGateway ID or duplex setting is invalid; save station settings first', 400, 'BAD_DEVICE');
     }

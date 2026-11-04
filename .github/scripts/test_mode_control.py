@@ -21,6 +21,11 @@ class ModeControlTests(unittest.TestCase):
         self.original = (ROOT / "configs/MMDVMHost.ini.sample").read_text()
         self.config.write_text(self.original)
         self.config.chmod(0o664)
+        for name, value in (("HOST_CONFIG", self.config),
+                            ("RADIO_CONFIG", self.config.parent / 'radios.json')):
+            item = patch.object(controller.radio, name, value)
+            item.start()
+            self.addCleanup(item.stop)
         self.calls = []
         self.records = {unit: {"Id": unit, "LoadState": "loaded", "ActiveState": "active",
                                "SubState": "running", "UnitFileState": "enabled"}

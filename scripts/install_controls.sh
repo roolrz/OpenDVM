@@ -3,6 +3,9 @@
 
 install_mode_controls() {
   install_file "scripts/mode_control.py" "/usr/local/sbin/opendvm-mode-control" 755 "root:root"
+  install_file "scripts/radio_config.py" "/usr/local/sbin/radio_config.py" 644 "root:root"
+  install_file "scripts/radio_host.py" "/usr/local/sbin/opendvm-radio-host" 755 "root:root"
+  install_file "systemd/mmdvm-radio-host.conf" "/etc/systemd/system/mmdvmhost.service.d/opendvm-radio-host.conf" 644
   install_file "systemd/opendvm-mode-boot.service" "/etc/systemd/system/opendvm-mode-boot.service" 644
   install_file "systemd/mmdvm-mode-boot.conf" "/etc/systemd/system/mmdvmhost.service.d/opendvm-mode-boot.conf" 644
   install -d -m 750 -o root -g www-data /etc/opendvm

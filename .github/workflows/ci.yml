@@ -62,6 +62,9 @@ jobs:
       - name: Test mode boot and runtime controls
         run: python3 .github/scripts/test_mode_control.py
 
+      - name: Test USB board bindings and radio supervision
+        run: python3 .github/scripts/test_radio_config.py
+
       - name: Compile status monitor and configuration service
         run: |
           (cd gui && ./compile.sh)

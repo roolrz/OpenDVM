@@ -12,6 +12,7 @@ function mode_response(int $status, array $body): never {
 
 $method = $_SERVER['REQUEST_METHOD'] ?? '';
 $arguments = ['status'];
+$input = '';
 if ($method === 'POST') {
     $password = opendvm_config_password();
     $given = $_POST['ConfigPassword'] ?? '';
@@ -20,10 +21,19 @@ if ($method === 'POST') {
     }
     $action = $_POST['action'] ?? '';
     $mode = $_POST['mode'] ?? '';
-    if (!in_array($action, ['start', 'stop'], true) || !in_array($mode, ['dstar', 'dmr', 'ysf', 'nxdn'], true)) {
+    if ($action === 'configure-radios') {
+        $input = $_POST['radios'] ?? '';
+        if (!is_string($input) || strlen($input) > 65536 || !is_array(json_decode($input, true))) {
+            mode_response(400, ['ok' => false, 'error' => 'Invalid USB board settings']);
+        }
+        $arguments = [$action];
+    } elseif (!in_array($action, ['start', 'stop'], true) || !in_array($mode, ['dstar', 'dmr', 'ysf', 'nxdn'], true)) {
         mode_response(400, ['ok' => false, 'error' => 'Invalid mode or action']);
+    } else {
+        $arguments = [$action, $mode];
     }
-    $arguments = [$action, $mode];
+} elseif ($method === 'GET' && ($_GET['q'] ?? '') === 'radios') {
+    $arguments = ['radios'];
 } elseif ($method !== 'GET') {
     mode_response(405, ['ok' => false, 'error' => 'method not allowed']);
 }
@@ -45,6 +55,7 @@ try {
     $command = array_merge(['/usr/bin/sudo', '-n', '/usr/local/sbin/opendvm-mode-control'], $arguments);
     $process = proc_open($command, [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']], $pipes);
     if (!is_resource($process)) throw new RuntimeException('Mode controller could not start');
+    if ($input !== '') fwrite($pipes[0], $input);
     fclose($pipes[0]);
     $output = stream_get_contents($pipes[1]);
     $error = stream_get_contents($pipes[2]);

@@ -270,7 +270,7 @@ to apply the settings and reports failures.
 
 The **Start** / **Stop** buttons act immediately and leave the saved boot policy
 unchanged. The next reboot restores the boot selection. Mode changes restart the
-shared MMDVMHost, briefly interrupting all modes; gateway connection status can
+MMDVMHost processes, briefly interrupting all modes; gateway connection status can
 take longer to settle. These controls use the Config Password entered on the page.
 
 Run `sudo ./install_update.sh` once to install the mode controller, service hook
@@ -282,7 +282,7 @@ NXDN is installed but disabled by default. In its settings card, enter your
 and optional comma-separated **Static talkgroups**. Save before using the runtime
 Start button. Empty static TGs allow selection by RF traffic. The dashboard shows
 the currently selected NXDN TG, every configured static TG, RF/NET calls and BER
-when the host reports it. Modes share the modem; concurrent RF protocols cannot
+when the host reports it. Modes assigned to the same board share its modem; concurrent RF protocols cannot
 be received at the same time.
 
 An existing installation gains NXDNGateway by running `sudo ./install_update.sh`.
@@ -308,6 +308,43 @@ device ID is shown above the lists. Save station ID/duplex changes before loadin
 BM settings. Unrelated station saves preserve explicitly configured network IDs.
 
 These changes go directly to BM and do not restart MMDVMHost or DMRGateway.
+
+### Bind modes to USB hotspot boards
+
+In **Settings**, each of D-Star, DMR, YSF and NXDN has a **Hotspot board** selector.
+Choose a detected USB serial board for each mode, enter the **Config Password**, then
+click **Apply USB bindings**. This saves board assignments separately from **Save & apply**.
+Use **Reload boards** to rescan devices and discard unsubmitted board edits.
+
+- Different boards run independent MMDVMHost processes and can operate simultaneously.
+  Modes assigned to the same board share one process and take turns as before.
+- **Current hotspot** uses the serial device in `/etc/MMDVMHost.ini`. Leaving all modes
+  on this option preserves the original single-host behavior. If that device aliases a
+  selected USB board, they share one process.
+- Prefer `/dev/serial/by-id` identities. A board without a unique serial identity can
+  use `/dev/serial/by-path`; keep it plugged into the same USB socket/hub port. USB port
+  renumbering does not change saved assignments. Disconnected saved boards stay visible.
+- The **USB hotspot boards** section sets RX/TX frequencies in Hz, simplex/duplex,
+  baud rate and RX/TX offsets per selected board. Simplex boards require identical RX/TX
+  frequencies. Other modem calibration values inherit `/etc/MMDVMHost.ini`.
+  Frequencies are also applied to each mode's gateway; BM slot selection follows the
+  board bound to DMR. The dashboard's Station header remains the station defaults.
+- Applying bindings, station settings or mode Start/Stop restarts the modem service and
+  briefly interrupts its boards. Unplugging or a host process exiting only affects that
+  board; the supervisor retries it without restarting the other boards.
+
+Bindings and profiles persist in `/etc/opendvm-radios.json`. The existing
+`mmdvmhost.service` supervises the hosts, with generated configurations under
+`/run/opendvm-host/` and separate `MMDVM-board-<id>-YYYY-MM-DD.log` files in
+`/var/log/mmdvm`. The status monitor discovers these logs and tracks each board's calls
+independently. With USB bindings enabled, generated hosts enable only the four modes
+managed by OpenDVM; auxiliary displays and remote-control listeners are disabled to
+avoid sharing their resources across processes.
+
+Run `install_update.sh` when upgrading an existing installation: it installs the host
+supervisor and systemd override as well as the web controls. Board configuration is
+preserved across updates. Save station settings before assigning new board profiles so
+their initial values use your configured station defaults.
 The manager applies only differences, adds before removing, and reads the lists
 back before reporting success. If BM rejects a request, cannot confirm the result
 or has changed since the lists were loaded, refresh before retrying. A failed

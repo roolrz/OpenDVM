@@ -189,6 +189,10 @@ ensure_dirs() {
 }
 
 check_serial_symlink() {
+  if [[ -f /etc/opendvm-radios.json ]] && python3 -c 'import json, sys; sys.exit(not any(json.load(open("/etc/opendvm-radios.json"))["bindings"].values()))'; then
+    log "Using saved USB board bindings."
+    return
+  fi
   if [[ ! -e /dev/mmdvm ]]; then
     die "/dev/mmdvm not found. Run ./scripts/install_serial.sh first."
   fi

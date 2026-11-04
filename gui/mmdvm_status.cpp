@@ -96,8 +96,7 @@ static inline std::string trim(const std::string& s, bool strip_matching_quotes 
 
 // Liest Callsign und Duplex aus /etc/MMDVMHost.ini
 // Liest Callsign, Duplex, RX/TX-Frequenzen, GPS und Location/Description aus /etc/MMDVMHost.ini
-static LocalConfig readLocalConfig() {
-    const std::string path = "/etc/MMDVMHost.ini";
+static LocalConfig readLocalConfig(const std::string& path = "/etc/MMDVMHost.ini") {
     std::ifstream f(path);
     if (!f) {
         dlog("[WARN] Kann ", path, " nicht öffnen – kein lokales Callsign/Duplex bekannt");
@@ -228,6 +227,16 @@ static std::vector<std::string> logsForDir(const std::string& dir) {
         else if (std::filesystem::exists(locSet[i])) out.push_back(locSet[i]);
         else out.push_back(utcSet[i]); // fallback: UTC-Name beobachten
     }
+    // Each USB board has its own log. Discover today's files on every scan,
+    // including boards connected after the monitor started.
+    std::error_code error;
+    const std::regex boardLog(R"(^MMDVM-board-[a-f0-9]{12}-(\d{4}-\d{2}-\d{2})\.log$)");
+    for (const auto& entry : std::filesystem::directory_iterator(dir, error)) {
+        std::smatch match;
+        const auto name = entry.path().filename().string();
+        if (std::regex_match(name, match, boardLog) && (match[1] == utc || match[1] == loc))
+            out.push_back(entry.path().string());
+    }
     return out;
 }
 
@@ -278,39 +287,7 @@ static std::optional<FileId> statFile(const std::string& path) {
 }
 
 static std::vector<std::string> defaultLogPaths() {
-    const std::string utc = utcDateStr();
-    const std::string loc = localDateStr();
-
-    // Kandidaten in Priorität: zuerst UTC, dann lokal
-    std::vector<std::vector<std::string>> candidates = {
-        {
-            "/var/log/mmdvm/DMRGateway-" + utc + ".log",
-            "/var/log/mmdvm/MMDVM-"      + utc + ".log",
-            "/var/log/mmdvm/YSFGateway-" + utc + ".log",
-            "/var/log/mmdvm/NXDNGateway.log"
-        },
-        {
-            "/var/log/mmdvm/DMRGateway-" + loc + ".log",
-            "/var/log/mmdvm/MMDVM-"      + loc + ".log",
-            "/var/log/mmdvm/YSFGateway-" + loc + ".log",
-            "/var/log/mmdvm/NXDNGateway.log"
-        }
-    };
-
-    std::vector<std::string> out;
-    out.reserve(3);
-    for (size_t i = 0; i < candidates[0].size(); ++i) {
-        // nimm den ersten existierenden Kandidaten je Rolle
-        std::string pick;
-        for (const auto& set : candidates) {
-            const std::string& p = set[i];
-            if (std::filesystem::exists(p)) { pick = p; break; }
-        }
-        // wenn keiner existiert, nimm UTC (wird später evtl. erscheinen)
-        if (pick.empty()) pick = candidates[0][i];
-        out.push_back(std::move(pick));
-    }
-    return out;
+    return logsForDir("/var/log/mmdvm");
 }
 
 
@@ -908,7 +885,7 @@ void upsertStatus(const std::string& mode,
         if (!ensure_conn() || !st_upsert_status) return;
 
         MYSQL_BIND b[9]{};
-        int rowId = 1; // Legacy summary plus one persistent row per DMR timeslot.
+        int rowId = 1; // Summary plus independent protocol/timeslot activity.
         b[0].buffer_type = MYSQL_TYPE_LONG;
         b[0].buffer = &rowId;
         // 1) mode
@@ -946,10 +923,13 @@ void upsertStatus(const std::string& mode,
         if (mysql_stmt_execute(st_upsert_status) != 0) {
             dlog("[DB  ] exec upsert status failed: ", mysql_stmt_error(st_upsert_status));
         }
-        if (mode == "DMR" && slot && (*slot == 1 || *slot == 2)) {
-            rowId = *slot + 1;
+        if (mode == "DMR" && slot && (*slot == 1 || *slot == 2)) rowId = *slot + 1;
+        else if (mode == "D-Star") rowId = 4;
+        else if (mode == "YSF") rowId = 5;
+        else if (mode == "NXDN") rowId = 6;
+        if (rowId != 1) {
             if (mysql_stmt_execute(st_upsert_status) != 0) {
-                dlog("[DB  ] exec DMR slot status failed: ", mysql_stmt_error(st_upsert_status));
+                dlog("[DB  ] exec protocol status failed: ", mysql_stmt_error(st_upsert_status));
             }
         }
     }
@@ -1015,7 +995,7 @@ void insertLastHeard(const std::string& callsign,
             );
         } else if (r.startEnd == "Mode") {
             if (r.mode == "Idle") {
-                if (ensure_conn()) mysql_query(conn, "UPDATE status SET active=0 WHERE id IN (2,3)");
+                if (ensure_conn()) mysql_query(conn, "UPDATE status SET active=0 WHERE id IN (2,3,4,5,6)");
                 // Nur Idle: Status auf inactive setzen und Felder leeren
                 upsertStatus(
                     r.mode, "", std::nullopt,std::nullopt,
@@ -1310,7 +1290,7 @@ private:
 static uint64_t processFileFromOffset(const std::string& path,
                                       LogParser& parser,
                                       Database& db,
-                                      uint64_t startOffset)
+                                      uint64_t startOffset, bool separateBoard = false)
 {
     std::ifstream f(path, std::ios::in | std::ios::binary);
     if (!f) {
@@ -1355,7 +1335,7 @@ static uint64_t processFileFromOffset(const std::string& path,
         }
 
         // dann das aktuelle Ergebnis
-        if (res) {
+        if (res && !(separateBoard && res->startEnd == "Mode" && res->mode == "Idle")) {
             printResult(*res);
             db.handleParsed(*res);
         }
@@ -1403,6 +1383,8 @@ int main(int argc, char** argv) {
     // Parser bleibt über die gesamte Laufzeit bestehen
     LocalConfig cfg = readLocalConfig();
     LogParser parser(cfg);
+    std::map<std::string, LogParser> boardParsers;
+    std::map<std::string, std::filesystem::file_time_type> boardConfigTimes;
     Database   db;
 
     // Argumente gemerkt: wenn keine angegeben sind, beobachten wir immer die heutigen Standardpfade
@@ -1456,6 +1438,10 @@ int main(int argc, char** argv) {
             if (!st) {
                 continue;
             }
+            std::smatch board;
+            const std::string filename = std::filesystem::path(p).filename().string();
+            const bool separateBoard = std::regex_match(filename, board,
+                std::regex(R"(^MMDVM-board-([a-f0-9]{12})-\d{4}-\d{2}-\d{2}\.log$)"));
 
             uint64_t lastInode = 0, lastOffset = 0;
             if (auto it = offsets.find(p); it != offsets.end()) {
@@ -1468,12 +1454,27 @@ int main(int argc, char** argv) {
             }
 
             // Wenn neu beobachtet: am Ende beginnen
-            if (offsets.find(p) == offsets.end()) {
+            if (!separateBoard && offsets.find(p) == offsets.end()) {
                 lastOffset = static_cast<uint64_t>(st->size);
             }
 
             uint64_t before = lastOffset;
-            uint64_t newOffset = processFileFromOffset(p, parser, db, lastOffset);
+            LogParser* sourceParser = &parser;
+            if (separateBoard) {
+                const std::string id = board[1];
+                const std::string config = "/run/opendvm-host/" + id + ".ini";
+                std::error_code error;
+                const auto modified = std::filesystem::last_write_time(config, error);
+                if (!error && boardConfigTimes[id] != modified) {
+                    boardParsers.erase(id);
+                    boardConfigTimes[id] = modified;
+                }
+                auto found = boardParsers.find(id);
+                if (found == boardParsers.end())
+                    found = boardParsers.try_emplace(id, readLocalConfig(config)).first;
+                sourceParser = &found->second;
+            }
+            uint64_t newOffset = processFileFromOffset(p, *sourceParser, db, lastOffset, separateBoard);
             uint64_t delta = (newOffset >= before) ? (newOffset - before) : 0;
             uint64_t approxLines = delta / 120; // grobe Annahme (durchschnittlich 120 Bytes pro Zeile)
             lastReadCounts[p] = approxLines;
