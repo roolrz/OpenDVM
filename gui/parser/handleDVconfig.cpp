@@ -151,7 +151,8 @@ bool handleDVconfig::saveConfig() {
     chg_ysf |= ysf_renderer.setValue("Latitude",       site.Latitude,  "Info");
     chg_ysf |= ysf_renderer.setValue("Longitude",      site.Longitude, "Info");
     chg_ysf |= ysf_renderer.setValue("Height",         site.Height,    "Info");
-    chg_ysf |= ysf_renderer.setValue("Name",           site.Name,      "Info");
+    // WIRES-X advertises the hotspot name, independently of the DMR network name.
+    chg_ysf |= ysf_renderer.setValue("Name",           "HS",           "Info");
     chg_ysf |= ysf_renderer.setValue("Description",    site.Description,"Info");
     chg_ysf |= ysf_renderer.setValue("Startup",        site.Startup,   "Network");
     chg_ysf |= ysf_renderer.setValue("Options",        site.Options,   "Network");
