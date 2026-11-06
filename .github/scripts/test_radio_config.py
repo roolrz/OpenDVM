@@ -90,6 +90,40 @@ class RadioTests(unittest.TestCase):
         self.assertEqual(set(plans[0]['modes']), set(radio.MODES))
         self.assertEqual(self.parse(plans[0])['Info']['TXFrequency'], '431750000')
 
+    def test_board_profiles_saved_without_bindings_survive_unplug_and_reassignment(self):
+        with self.devices():
+            payload = self.payload()
+            payload['bindings'] = {mode: '' for mode in radio.MODES}
+            data = radio.validate(payload)
+        radio.atomic_write(radio.RADIO_CONFIG, json.dumps(data))
+        with patch.object(radio, 'discover', return_value=[]):
+            snapshot = radio.snapshot()
+            self.assertEqual({item['device'] for item in snapshot['devices']}, {self.a, self.b})
+            payload = {key: snapshot[key] for key in ('bindings', 'profiles', 'revision')}
+            self.assertEqual(radio.validate(payload), data)
+            payload['bindings']['ysf'] = self.b
+            reassigned = radio.validate(payload)
+        self.assertEqual(reassigned['profiles'], data['profiles'])
+        plans = radio.plans(reassigned)
+        self.assertNotIn(self.a, [plan['device'] for plan in plans])
+        board = next(plan for plan in plans if plan['device'] == self.b)
+        self.assertEqual(self.parse(board)['Info']['RXFrequency'], '433000000')
+
+    def test_profile_applies_to_legacy_alias_without_explicit_bindings(self):
+        real = self.host.parent / 'ttyUSB0'
+        real.touch()
+        alias = self.host.parent / 'alias'
+        alias.symlink_to(real)
+        self.host.write_text(self.host.read_text().replace('/dev/mmdvm', str(alias)))
+        data = radio.empty_config()
+        self.assertFalse(radio.managed(data))
+        data['profiles'][str(real)] = self.profile
+        self.assertTrue(radio.managed(data))
+        plans = radio.plans(data)
+        self.assertEqual(len(plans), 1)
+        self.assertEqual(self.parse(plans[0])['Info']['RXFrequency'], '431750000')
+        self.assertEqual(radio.effective_profile('ysf', data), self.profile)
+
     def test_reject_arbitrary_paths_unknown_modes_stale_revision_and_bad_profiles(self):
         with self.devices():
             for change in [lambda d: d['bindings'].update(ysf='/etc/passwd'),
@@ -97,6 +131,8 @@ class RadioTests(unittest.TestCase):
                            lambda d: d.update(revision='stale'),
                            lambda d: d['profiles'][self.a].update(baud=0),
                            lambda d: d['profiles'][self.a].update(duplex=True),
+                           lambda d: d['profiles'].update({'/etc/passwd': self.profile}),
+                           lambda d: d['profiles'].update({'/dev/serial/by-id/unknown': self.profile}),
                            lambda d: d['profiles'][self.a].update(tx_frequency=440000000)]:
                 data = self.payload()
                 change(data)

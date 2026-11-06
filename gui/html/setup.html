@@ -67,6 +67,7 @@
     .radio-profile{border-top:1px solid var(--border); padding-top:14px; margin-top:14px}
     .radio-profile h3{font-size:14px; overflow-wrap:anywhere}
     .radio-profile .row{margin-bottom:12px}
+    #radioManager, .radio-profile{scroll-margin-top:110px}
     #radioResult{font-size:13px; overflow-wrap:anywhere}
     button:disabled{opacity:.5; cursor:wait}
     .ok{color:var(--ok); font-size:13px; margin-top:6px}
@@ -454,17 +455,20 @@
       </section>
 
       <section class="tile center" id="radioManager">
-        <h2>USB hotspot boards</h2>
-        <p class="hint">Select a board in each mode above. Modes sharing a board take turns;
+        <h2>USB hotspot boards &amp; frequencies</h2>
+        <p class="hint">Configure each USB board here, even before assigning a mode. RX/TX frequencies are in Hz
+          (for example, 431750000 = 431.750 MHz). Each board can use different frequencies;
+          a simplex board must use matching RX and TX frequencies.
+          Modes sharing a board share its frequencies and take turns;
           different boards can operate at the same time. Saved USB identities survive serial port renumbering.
           Devices identified by USB path must stay in the same USB socket.</p>
         <div id="radioProfiles"></div>
         <div class="bm-buttons">
           <button type="button" id="radioReload">Reload boards</button>
-          <button type="button" id="radioApply" class="primary" disabled>Apply USB bindings</button>
+          <button type="button" id="radioApply" class="primary" disabled>Apply board settings</button>
         </div>
         <div id="radioResult" role="status" aria-live="polite">Loading USB boards…</div>
-        <p class="hint">Use the Config Password below. Applying bindings restarts the radio processes and
+        <p class="hint">Use the Config Password below. Applying board settings restarts the radio processes and
           active gateways, briefly interrupting all modes. Board frequencies override the Station defaults.</p>
       </section>
 
@@ -872,7 +876,7 @@
     form.addEventListener('submit', async (e)=>{
       e.preventDefault();
       if (saving || modeBusy || window.__bmBusy || !modesReady || !configReady) return;
-      if (window.__radioDirty) { showSnack('Apply USB bindings first, or reload boards to discard those edits'); return; }
+      if (window.__radioDirty) { showSnack('Apply board settings first, or reload boards to discard those edits'); return; }
       if (!validate()){
         state.textContent = 'error';
         state.style.color = '#e5484d';
@@ -999,7 +1003,7 @@
     })();
 
   </script>
-  <script src="js/radio-bindings.js?v=2"
+  <script src="js/radio-bindings.js?v=3"
     onerror="document.getElementById('radioResult').textContent = 'Board controls could not load. Refresh this page or update OpenDVM.';"></script>
 </body>
 </html>

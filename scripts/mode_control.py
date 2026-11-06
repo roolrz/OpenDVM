@@ -111,9 +111,11 @@ def status():
     flags = radio_flags()
     modem = records["mmdvmhost.service"]["ActiveState"]
     result = {}
-    bindings = radio.read_config()['bindings']
+    data = radio.read_config()
+    bindings = data['bindings']
+    managed = radio.managed(data)
     radio_status = {}
-    if any(bindings.values()):
+    if managed:
         try:
             report = json.loads((radio.RUNTIME / 'status.json').read_text())
             if time.time() - report['updated_at'] < 10:
@@ -123,7 +125,7 @@ def status():
     for mode, item in MODES.items():
         record = records[item[0]]
         board = radio_status.get(mode, {})
-        board_state = board.get('state', 'starting') if any(bindings.values()) and modem == 'active' else modem
+        board_state = board.get('state', 'starting') if managed and modem == 'active' else modem
         result[mode] = {
             "start_on_boot": record.get("UnitFileState") == "enabled",
             "rf_enabled": flags[mode], "gateway_state": record["ActiveState"],
