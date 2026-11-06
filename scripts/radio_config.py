@@ -110,12 +110,15 @@ def snapshot():
     data = read_config()
     devices = discover()
     known = {item['device'] for item in devices}
-    for device in set(data['bindings'].values()) - {''} - known:
+    for device in sorted((set(data['bindings'].values()) | set(data['profiles'])) - {''} - known):
         devices.append({'device': device, 'label': Path(device).name,
                         'present': available(device), 'identity': 'saved'})
     revision = hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
+    legacy = legacy_device()
+    legacy_board = next((item['device'] for item in devices
+                         if Path(item['device']).resolve() == Path(legacy).resolve()), '')
     return {'ok': True, **data, 'devices': devices, 'defaults': defaults(),
-            'legacy_device': legacy_device(), 'revision': revision}
+            'legacy_device': legacy, 'legacy_board': legacy_board, 'revision': revision}
 
 
 def validate(data):
@@ -127,15 +130,17 @@ def validate(data):
     if not isinstance(bindings, dict) or set(bindings) != set(MODES) or not isinstance(profiles, dict):
         raise ValueError('Provide bindings for all four modes')
     saved = read_config()
-    allowed = {item['device'] for item in discover()} | (set(saved['bindings'].values()) - {''})
+    allowed = {item['device'] for item in discover()} | (set(saved['bindings'].values()) - {''}) | set(saved['profiles'])
     for device in bindings.values():
         if not isinstance(device, str) or (device and (not stable_path(device) or device not in allowed)):
             raise ValueError('Select a discovered USB board or a previously saved device')
     used = set(bindings.values()) - {''}
-    if set(profiles) != used:
+    if not used.issubset(profiles):
         raise ValueError('Provide one profile for each selected USB board')
     physical = {}
     for device, profile in profiles.items():
+        if not stable_path(device) or device not in allowed:
+            raise ValueError('Select a discovered USB board or a previously saved device')
         if not isinstance(profile, dict) or set(profile) != set(FIELDS):
             raise ValueError('Incomplete USB board profile')
         for key, (_, _, minimum, maximum) in FIELDS.items():
@@ -149,6 +154,11 @@ def validate(data):
             raise ValueError('Two device paths refer to the same board; select the same path for shared modes')
         physical[resolved] = device
     return {'version': 1, 'bindings': bindings, 'profiles': profiles}
+
+
+def managed(data):
+    """Saved board profiles also apply when modes use the legacy device alias."""
+    return bool(any(data['bindings'].values()) or data['profiles'])
 
 
 def atomic_write(path, text, mode=0o644):

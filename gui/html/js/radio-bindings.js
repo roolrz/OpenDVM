@@ -1,6 +1,7 @@
 /* Board bindings are applied separately from the station settings inbox. */
 (() => {
   const modes = ['dstar', 'dmr', 'ysf', 'nxdn'];
+  const modeNames = {dstar: 'D-Star', dmr: 'DMR', ysf: 'YSF', nxdn: 'NXDN'};
   const selects = {};
   const result = document.getElementById('radioResult');
   const profiles = document.getElementById('radioProfiles');
@@ -19,7 +20,7 @@
   ];
   const dirty = () => {
     window.__radioDirty = true;
-    result.textContent = 'Board changes not applied. Use Apply USB bindings below.';
+    result.textContent = 'Board changes not applied. Use Apply board settings below.';
   };
   modes.forEach(mode => {
     const select = document.getElementById(mode + 'Board');
@@ -35,14 +36,32 @@
   };
   function renderProfiles() {
     profiles.replaceChildren();
-    const used = [...new Set(Object.values(selects).map(select => select.value).filter(Boolean))];
-    used.forEach((device, index) => {
+    if (!loaded.devices.length) {
+      const hint = document.createElement('p');
+      hint.className = 'hint';
+      hint.textContent = 'No USB boards detected or saved. Connect a USB board and use Reload boards. Current hotspot uses the Station frequency settings until a board profile is saved.';
+      profiles.append(hint);
+    }
+    loaded.devices.forEach((board, index) => {
+      const device = board.device;
       if (!edited[device]) edited[device] = {...loaded.defaults};
       const section = document.createElement('div');
       section.className = 'radio-profile';
+      section.id = 'radio-profile-' + index;
+      section.dataset.device = device;
       const heading = document.createElement('h3');
-      heading.textContent = device + (loaded.devices.find(item => item.device === device)?.present ? '' : ' (not connected)');
+      heading.textContent = board.label + (board.present ? '' : ' (not connected)');
       section.append(heading);
+      const identity = document.createElement('p');
+      identity.className = 'hint';
+      identity.style.overflowWrap = 'anywhere';
+      identity.textContent = device;
+      section.append(identity);
+      const assigned = document.createElement('p');
+      assigned.className = 'hint';
+      const names = modes.filter(mode => (selects[mode].value || loaded.legacy_board) === device).map(mode => modeNames[mode]);
+      assigned.textContent = names.length ? 'Used by: ' + names.join(', ') : 'No modes assigned. Settings can be saved before assigning a mode.';
+      section.append(assigned);
       let row;
       fields.forEach(([key, title, min, max], fieldIndex) => {
         if (fieldIndex % 2 === 0) {
@@ -85,23 +104,22 @@
       if (!password) { result.textContent = 'Enter Config Password below first.'; return; }
       if ([...profiles.querySelectorAll('input')].some(input => !input.reportValidity())) return;
       const bindings = Object.fromEntries(modes.map(mode => [mode, selects[mode].value]));
-      const selected = Object.fromEntries([...new Set(Object.values(bindings).filter(Boolean))].map(device => [device, edited[device]]));
       Object.assign(options, {method: 'POST', body: new URLSearchParams({
         action: 'configure-radios', ConfigPassword: password,
-        radios: JSON.stringify({bindings, profiles: selected, revision: loaded.revision}),
+        radios: JSON.stringify({bindings, profiles: edited, revision: loaded.revision}),
       })});
     }
     busy = true;
     modeBusy = true;
     updateControls();
-    result.textContent = save ? 'Applying USB board bindings…' : 'Scanning USB serial devices…';
+    result.textContent = save ? 'Applying board settings…' : 'Scanning USB serial devices…';
     try {
       const response = await fetch('mode_control.php?q=radios', options);
       const data = await response.json();
       if (!response.ok || !data.ok) throw new Error(data.error || 'USB board operation failed');
       render(data);
-      result.textContent = save ? 'Bindings saved. Check each mode’s status above as its board starts.'
-        : data.devices.length ? 'USB boards loaded. Select a board for each mode above.'
+      result.textContent = save ? 'Board settings saved. Check each mode’s status above as its board starts.'
+        : data.devices.length ? 'USB boards loaded. Configure each board below; assign modes using the selectors above.'
         : 'No USB boards with stable serial paths detected. Current hotspot settings are still available.';
       if (save && window.__invalidateBm) window.__invalidateBm();
       return true;

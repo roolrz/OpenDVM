@@ -313,20 +313,23 @@ These changes go directly to BM and do not restart MMDVMHost or DMRGateway.
 
 In **Settings**, each of D-Star, DMR, YSF and NXDN has a **Hotspot board** selector.
 Choose a detected USB serial board for each mode, enter the **Config Password**, then
-click **Apply USB bindings**. This saves board assignments separately from **Save & apply**.
+click **Apply board settings**. This saves board assignments separately from **Save & apply**.
 Use **Reload boards** to rescan devices and discard unsubmitted board edits.
 
 - Different boards run independent MMDVMHost processes and can operate simultaneously.
   Modes assigned to the same board share one process and take turns as before.
 - **Current hotspot** uses the serial device in `/etc/MMDVMHost.ini`. Leaving all modes
-  on this option preserves the original single-host behavior. If that device aliases a
-  selected USB board, they share one process.
+  on this option uses one host. If that device aliases a USB board with saved settings,
+  that board profile also applies to modes using **Current hotspot**.
 - Prefer `/dev/serial/by-id` identities. A board without a unique serial identity can
   use `/dev/serial/by-path`; keep it plugged into the same USB socket/hub port. USB port
   renumbering does not change saved assignments. Disconnected saved boards stay visible.
 - The **USB hotspot boards** section sets RX/TX frequencies in Hz, simplex/duplex,
-  baud rate and RX/TX offsets per selected board. Simplex boards require identical RX/TX
+  baud rate and RX/TX offsets per detected or saved board. Simplex boards require identical RX/TX
   frequencies. Other modem calibration values inherit `/etc/MMDVMHost.ini`.
+  Each board has its own card, even without any mode assigned. Settings remain saved
+  when modes are reassigned or the board is unplugged. Modes only select which board
+  to use; all modes on a board share its frequencies.
   Frequencies are also applied to each mode's gateway; BM slot selection follows the
   board bound to DMR. The dashboard's Station header remains the station defaults.
 - Applying bindings, station settings or mode Start/Stop restarts the modem service and

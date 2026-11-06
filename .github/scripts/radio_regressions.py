@@ -88,17 +88,52 @@ def check_radio_bindings(api, request, wait_for, start, stop, logs):
         assert Select(browser.find_element(By.ID, 'ysfBoard')).first_selected_option.get_attribute('value') == devices[0]
         assert len(browser.find_elements(By.CSS_SELECTOR, '.radio-profile')) == 2
         assert 'not connected' in Select(browser.find_element(By.ID, 'ysfBoard')).first_selected_option.text
+        # Board cards are independent of mode assignments, including saved
+        # unplugged boards. Save different frequencies with no modes assigned.
         for mode in bindings:
             Select(browser.find_element(By.ID, mode + 'Board')).select_by_value('')
+        assert len(browser.find_elements(By.CSS_SELECTOR, '.radio-profile')) == 2
+        expected = {devices[0]: 432100000, devices[1]: 433500000}
+        for card in browser.find_elements(By.CSS_SELECTOR, '.radio-profile'):
+            frequency = expected[card.get_attribute('data-device')]
+            for field in ('rx_frequency', 'tx_frequency'):
+                control = card.find_element(By.CSS_SELECTOR, f'input[id$="-{field}"]')
+                control.clear()
+                control.send_keys(str(frequency))
         password = browser.find_element(By.ID, 'ConfigPassword')
-        password.clear()
         password.send_keys(PASSWORD)
         browser.find_element(By.ID, 'radioApply').click()
-        wait.until(lambda driver: 'Bindings saved' in driver.find_element(By.ID, 'radioResult').text)
-        assert not any(json.loads(Path('/etc/opendvm-radios.json').read_text())['bindings'].values())
+        wait.until(lambda driver: driver.find_element(By.ID, 'radioApply').is_enabled())
+        assert 'Board settings saved' in browser.find_element(By.ID, 'radioResult').text
+        saved = json.loads(Path('/etc/opendvm-radios.json').read_text())
+        for device, frequency in expected.items():
+            assert saved['profiles'][device]['rx_frequency'] == frequency
+            assert saved['profiles'][device]['tx_frequency'] == frequency
+        assert not any(saved['bindings'].values())
+        browser.get('http://127.0.0.1:8080/setup.html')
+        wait.until(lambda driver: driver.find_element(By.ID, 'radioApply').is_enabled())
+        cards = browser.find_elements(By.CSS_SELECTOR, '.radio-profile')
+        assert len(cards) == 2
+        for card in cards:
+            frequency = expected[card.get_attribute('data-device')]
+            assert int(card.find_element(By.CSS_SELECTOR, 'input[id$="-rx_frequency"]').get_attribute('value')) == frequency
+        # Reassign a mode without losing either board's profile.
+        Select(browser.find_element(By.ID, 'ysfBoard')).select_by_value(devices[1])
+        password = browser.find_element(By.ID, 'ConfigPassword')
+        password.send_keys(PASSWORD)
+        browser.find_element(By.ID, 'radioApply').click()
+        wait.until(lambda driver: driver.find_element(By.ID, 'radioApply').is_enabled())
+        assert 'Board settings saved' in browser.find_element(By.ID, 'radioResult').text
+        reassigned = json.loads(Path('/etc/opendvm-radios.json').read_text())
+        assert reassigned['bindings']['ysf'] == devices[1]
+        assert reassigned['profiles'] == saved['profiles']
         browser.save_screenshot(str(logs / 'usb-board-settings.png'))
     finally:
         browser.quit()
+    snapshot = json.loads(request('mode_control.php?q=radios'))
+    request('mode_control.php', {'action': 'configure-radios', 'ConfigPassword': PASSWORD,
+                                'radios': json.dumps(dict(bindings={mode: '' for mode in bindings},
+                                                         profiles={}, revision=snapshot['revision']))})
     for index, device in zip((900, 901), devices):
         Path(device).unlink(missing_ok=True)
         Path(f'/dev/ttyUSB{index}').unlink()

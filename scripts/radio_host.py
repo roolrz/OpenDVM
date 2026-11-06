@@ -15,7 +15,7 @@ BINARY = '/usr/local/bin/MMDVMHost'
 def main():
     data = radio.read_config()
     (radio.RUNTIME / 'status.json').unlink(missing_ok=True)
-    if not any(data['bindings'].values()):
+    if not radio.managed(data):
         os.execv(BINARY, [BINARY, str(radio.HOST_CONFIG)])
     radio.RUNTIME.mkdir(parents=True, exist_ok=True)
     children = {}
@@ -28,7 +28,7 @@ def main():
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     groups = []
-    references = sorted(set(data['bindings'].values()) - {''} | {radio.legacy_device()})
+    references = sorted(set(data['bindings'].values()) - {''} | set(data['profiles']) | {radio.legacy_device()})
     aliases = None
     try:
         while not stopping:
