@@ -20,7 +20,7 @@
   ];
   const dirty = () => {
     window.__radioDirty = true;
-    result.textContent = 'Board changes not applied. Use Apply board settings below.';
+    result.textContent = 'Board changes not applied. Use Save & apply, or Apply board settings to save only boards.';
   };
   modes.forEach(mode => {
     const select = document.getElementById(mode + 'Board');
@@ -86,7 +86,9 @@
   }
   function render(data) {
     loaded = data;
-    edited = JSON.parse(JSON.stringify(data.profiles));
+    // Older API versions returned [] for an empty map. Always edit an object:
+    // JSON.stringify(array) silently drops properties keyed by device path.
+    edited = Object.fromEntries(Object.entries(data.profiles || {}).map(([device, profile]) => [device, {...profile}]));
     modes.forEach(mode => {
       const select = selects[mode];
       select.replaceChildren(new Option('Current hotspot (' + data.legacy_device + ')', ''));
@@ -96,13 +98,17 @@
     renderProfiles();
     window.__radioDirty = false;
   }
-  async function run(save) {
-    if (busy || saving || modeBusy || window.__bmBusy) return;
+  async function run(save, fromSettings = false) {
+    if (busy || (saving && !fromSettings) || modeBusy || window.__bmBusy) return false;
+    if (save && !loaded) { result.textContent = 'Wait for USB boards to load before saving.'; return false; }
     const options = {cache: 'no-store'};
     if (save) {
       const password = document.getElementById('ConfigPassword').value;
-      if (!password) { result.textContent = 'Enter Config Password below first.'; return; }
-      if ([...profiles.querySelectorAll('input')].some(input => !input.reportValidity())) return;
+      if (!password) { result.textContent = 'Enter Config Password below first.'; return false; }
+      if ([...profiles.querySelectorAll('input')].some(input => !input.reportValidity())) {
+        result.textContent = 'Check the highlighted board setting before saving.';
+        return false;
+      }
       const bindings = Object.fromEntries(modes.map(mode => [mode, selects[mode].value]));
       Object.assign(options, {method: 'POST', body: new URLSearchParams({
         action: 'configure-radios', ConfigPassword: password,
@@ -134,6 +140,7 @@
   }
   reload.addEventListener('click', () => run(false));
   apply.addEventListener('click', () => run(true));
+  window.__saveRadioSettings = () => run(true, true);
   async function initialize() {
     for (let attempt = 0; attempt < 3; attempt++) {
       // Other settings operations can temporarily hold the shared controls.

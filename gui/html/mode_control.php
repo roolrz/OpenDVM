@@ -4,7 +4,7 @@ require_once __DIR__ . '/config_auth.php';
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 
-function mode_response(int $status, array $body): never {
+function mode_response(int $status, array|object $body): never {
     http_response_code($status);
     echo json_encode($body, JSON_UNESCAPED_UNICODE);
     exit;
@@ -63,8 +63,10 @@ try {
     fclose($pipes[2]);
     $code = proc_close($process);
     if ($pdo) $pdo->commit();
-    $result = json_decode($output, true);
-    if (!is_array($result)) throw new RuntimeException($error ?: 'Mode controller returned invalid data');
+    // Preserve JSON objects, including an empty profiles map. Decoding into
+    // associative arrays would turn {} into [] when the response is encoded.
+    $result = json_decode($output);
+    if (!is_object($result)) throw new RuntimeException($error ?: 'Mode controller returned invalid data');
     mode_response($code === 0 ? 200 : 503, $result);
 } catch (Throwable $error) {
     mode_response(503, ['ok' => false, 'error' => $error->getMessage()]);

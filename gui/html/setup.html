@@ -468,7 +468,8 @@
           <button type="button" id="radioApply" class="primary" disabled>Apply board settings</button>
         </div>
         <div id="radioResult" role="status" aria-live="polite">Loading USB boards…</div>
-        <p class="hint">Use the Config Password below. Applying board settings restarts the radio processes and
+        <p class="hint">Save &amp; apply below also saves board changes. Apply board settings saves only boards
+          and mode assignments. Use the Config Password below. Applying board settings restarts the radio processes and
           active gateways, briefly interrupting all modes. Board frequencies override the Station defaults.</p>
       </section>
 
@@ -497,7 +498,8 @@
         </div>
 
         <div id="msg" class="hint"></div>
-        <p class="hint">Save &amp; apply sets each mode's boot policy and starts or stops its radio and gateway now.
+        <p class="hint">Save &amp; apply saves board changes, station settings and each mode's boot policy,
+          then starts or stops its radio and gateway now.
           Start / Stop only changes the current session. Applying mode changes restarts the modem processes
           and briefly interrupts all modes.</p>
       </section>
@@ -876,7 +878,6 @@
     form.addEventListener('submit', async (e)=>{
       e.preventDefault();
       if (saving || modeBusy || window.__bmBusy || !modesReady || !configReady) return;
-      if (window.__radioDirty) { showSnack('Apply board settings first, or reload boards to discard those edits'); return; }
       if (!validate()){
         state.textContent = 'error';
         state.style.color = '#e5484d';
@@ -889,7 +890,15 @@
       state.textContent = 'saving…';
       saving = true;
       updateControls();
+      let boardsSaved = false;
       try{
+        if (window.__radioDirty) {
+          state.textContent = 'saving boards…';
+          if (!window.__saveRadioSettings || !await window.__saveRadioSettings()) {
+            throw new Error('Board settings were not saved: ' + document.getElementById('radioResult').textContent);
+          }
+          boardsSaved = true;
+        }
         const body = serializeForm(form);
         const r = await fetch('save_config.php', {
           method:'POST',
@@ -917,13 +926,13 @@
           const errTxt = (data && data.error) ? data.error : (r.status+' '+r.statusText);
           state.textContent = 'error';
           state.style.color = '#e5484d';
-          msg.textContent = 'Save failed: ' + errTxt;
+          msg.textContent = (boardsSaved ? 'Board settings saved; station settings failed: ' : 'Save failed: ') + errTxt;
           showSnack('Save error');
         }
       } catch(ex){
         state.textContent = 'error';
         state.style.color = '#e5484d';
-        msg.textContent = ex.message;
+        msg.textContent = (boardsSaved ? 'Board settings saved; station save/apply failed: ' : '') + ex.message;
         showSnack('Save / apply failed');
       } finally {
         saving = false;
@@ -1003,7 +1012,7 @@
     })();
 
   </script>
-  <script src="js/radio-bindings.js?v=3"
+  <script src="js/radio-bindings.js?v=4"
     onerror="document.getElementById('radioResult').textContent = 'Board controls could not load. Refresh this page or update OpenDVM.';"></script>
 </body>
 </html>

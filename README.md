@@ -313,7 +313,10 @@ These changes go directly to BM and do not restart MMDVMHost or DMRGateway.
 
 In **Settings**, each of D-Star, DMR, YSF and NXDN has a **Hotspot board** selector.
 Choose a detected USB serial board for each mode, enter the **Config Password**, then
-click **Apply board settings**. This saves board assignments separately from **Save & apply**.
+click **Save & apply** to save board changes together with the station settings.
+**Apply board settings** saves only board profiles and mode assignments. If saving
+boards fails, **Save & apply** stops and retains your edits. If the subsequent station
+save fails, the page reports that board settings have already been saved.
 Use **Reload boards** to rescan devices and discard unsubmitted board edits.
 
 - Different boards run independent MMDVMHost processes and can operate simultaneously.

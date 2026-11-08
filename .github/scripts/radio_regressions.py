@@ -29,6 +29,62 @@ def check_radio_bindings(api, request, wait_for, start, stop, logs):
         devices.append(str(link))
     data = json.loads(request('mode_control.php?q=radios'))
     assert data['ok'] and {item['device'] for item in data['devices']} >= set(devices)
+    assert data['profiles'] == {}, 'An empty profiles map must remain a JSON object through PHP'
+
+    def make_browser():
+        options = Options()
+        for argument in ('--headless', '--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu',
+                         '--no-proxy-server', '--disable-background-networking', '--window-size=1280,1600',
+                         '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1'):
+            options.add_argument(argument)
+        return webdriver.Chrome(service=Service('/usr/bin/chromedriver'), options=options)
+
+    # First use must go through the real PHP endpoint, without pre-seeding any
+    # profiles. Save & apply must include board edits and stop on board failure.
+    browser = make_browser()
+    wait = WebDriverWait(browser, 20)
+    try:
+        browser.get('http://127.0.0.1:8080/setup.html')
+        wait.until(lambda driver: driver.find_element(By.ID, 'radioApply').is_enabled()
+                   and driver.find_element(By.ID, 'saveBtn').is_enabled())
+        original_callsign = api('config_inbox')['Callsign']
+        callsign = browser.find_element(By.ID, 'Callsign')
+        callsign.clear()
+        callsign.send_keys('DL9USB')
+        Select(browser.find_element(By.ID, 'dmrBoard')).select_by_value(devices[0])
+        for card in browser.find_elements(By.CSS_SELECTOR, '.radio-profile'):
+            frequency = 432100000 if card.get_attribute('data-device') == devices[0] else 433500000
+            for field, value in (('rx_frequency', frequency), ('tx_frequency', frequency), ('duplex', 0)):
+                control = card.find_element(By.CSS_SELECTOR, f'input[id$="-{field}"]')
+                control.clear()
+                control.send_keys(str(value))
+        password = browser.find_element(By.ID, 'ConfigPassword')
+        password.send_keys('wrong-password')
+        browser.find_element(By.ID, 'saveBtn').click()
+        wait.until(lambda driver: driver.find_element(By.ID, 'formState').text == 'error')
+        wait.until(lambda driver: driver.find_element(By.ID, 'saveBtn').is_enabled())
+        assert 'Board settings were not saved' in browser.find_element(By.ID, 'msg').text
+        assert browser.execute_script('return window.__radioDirty')
+        assert api('config_inbox')['Callsign'] == original_callsign
+        assert json.loads(request('mode_control.php?q=radios'))['profiles'] == {}
+        password.clear()
+        password.send_keys(PASSWORD)
+        browser.find_element(By.ID, 'saveBtn').click()
+        wait.until(lambda driver: driver.find_element(By.ID, 'formState').text == 'applied')
+        assert not browser.execute_script('return window.__radioDirty')
+        saved = json.loads(Path('/etc/opendvm-radios.json').read_text())
+        assert saved['bindings']['dmr'] == devices[0]
+        assert saved['profiles'][devices[0]]['rx_frequency'] == 432100000
+        assert saved['profiles'][devices[1]]['tx_frequency'] == 433500000
+        assert api('config_inbox')['Callsign'] == 'DL9USB'
+        browser.get('http://127.0.0.1:8080/setup.html')
+        wait.until(lambda driver: driver.find_element(By.ID, 'radioApply').is_enabled())
+        assert Select(browser.find_element(By.ID, 'dmrBoard')).first_selected_option.get_attribute('value') == devices[0]
+        assert len(browser.find_elements(By.CSS_SELECTOR, '.radio-profile')) == 2
+        browser.save_screenshot(str(logs / 'first-board-save.png'))
+    finally:
+        browser.quit()
+    data = json.loads(request('mode_control.php?q=radios'))
     request('mode_control.php', {'action': 'configure-radios', 'ConfigPassword': 'wrong', 'radios': '{}'}, 401)
     profiles = {device: dict(rx_frequency=431750000 + index * 1000000,
                             tx_frequency=431750000 + index * 1000000, duplex=0,
@@ -51,12 +107,7 @@ def check_radio_bindings(api, request, wait_for, start, stop, logs):
     missing = json.loads(request('mode_control.php?q=radios'))
     assert any(item['device'] == devices[0] and not item['present'] for item in missing['devices'])
 
-    options = Options()
-    for argument in ('--headless', '--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu',
-                     '--no-proxy-server', '--disable-background-networking', '--window-size=1280,1600',
-                     '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1'):
-        options.add_argument(argument)
-    browser = webdriver.Chrome(service=Service('/usr/bin/chromedriver'), options=options)
+    browser = make_browser()
     wait = WebDriverWait(browser, 20)
     try:
         # The selectors remain visible even if the external controller script
