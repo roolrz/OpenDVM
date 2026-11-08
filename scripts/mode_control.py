@@ -38,7 +38,7 @@ def systemctl(*arguments):
 
 
 def units():
-    text = systemctl("show", "--no-pager", "--property=Id,LoadState,ActiveState,SubState,UnitFileState",
+    text = systemctl("show", "--no-pager", "--property=Id,LoadState,ActiveState,SubState,UnitFileState,MainPID",
                      "mmdvmhost.service", *(item[0] for item in MODES.values()))
     records = {}
     for block in text.strip().split("\n\n"):
@@ -131,21 +131,41 @@ def status():
             "rf_enabled": flags[mode], "gateway_state": record["ActiveState"],
             "modem_state": board_state,
             "device": board.get('device', bindings[mode] or radio.legacy_device()),
+            "modem_pid": board.get('pid'), "modem_last_exit_code": board.get('last_exit_code'),
             "running": flags[mode] and board_state == "active" and record["ActiveState"] == "active",
         }
     return result
 
 
-def apply_runtime(flags):
+def supports_board_reload():
+    if not radio.managed(radio.read_config()):
+        return False
+    host = units()['mmdvmhost.service']
+    try:
+        report = json.loads((radio.RUNTIME / 'status.json').read_text())
+        # A legacy MMDVMHost or an older supervisor must never receive SIGHUP.
+        return (host['ActiveState'] == 'active' and report.get('reload_supported') is True
+                and int(host.get('MainPID', 0)) > 0
+                and report.get('supervisor_pid') == int(host['MainPID']))
+    except (OSError, ValueError, KeyError):
+        return False
+
+
+def apply_runtime(flags, isolate=False):
     validate_flags(flags)
     radio.sync_gateway_info()
     write_radio_flags(flags)
     stopped = [MODES[mode][0] for mode, enabled in flags.items() if not enabled]
     if stopped:
         systemctl("--no-block", "stop", *stopped)
-    # One transaction keeps the gateways ordered after the shared modem host.
-    systemctl("--no-block", "restart", "mmdvmhost.service",
-              *(MODES[mode][0] for mode, enabled in flags.items() if enabled))
+    started = [MODES[mode][0] for mode, enabled in flags.items() if enabled]
+    if isolate and supports_board_reload():
+        systemctl("--no-block", "reload", "mmdvmhost.service")
+        if started:
+            systemctl("--no-block", "restart", *started)
+    else:
+        # Full settings apply, initial activation and legacy configurations.
+        systemctl("--no-block", "restart", "mmdvmhost.service", *started)
 
 
 def validate_flags(flags):
@@ -206,7 +226,7 @@ def dispatch(arguments):
         return {"ok": True}
     if len(arguments) == 2 and arguments[0] in ("start", "stop") and arguments[1] in MODES:
         units()
-        apply_runtime({arguments[1]: arguments[0] == "start"})
+        apply_runtime({arguments[1]: arguments[0] == "start"}, isolate=True)
         return {"ok": True, "modes": status()}
     if len(arguments) == len(MODES) + 1 and arguments[0] == "configure" and all(value in ("0", "1") for value in arguments[1:]):
         flags = dict(zip(MODES, (value == "1" for value in arguments[1:])))

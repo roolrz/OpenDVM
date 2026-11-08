@@ -264,8 +264,9 @@ Die wichtigsten Einstellungen können im SETUP Fenster vorgenommen werden:
 **Start on boot** steuert den Gateway-Dienst und die RF-/Netzwerk-Freigabe in
 MMDVMHost. **Save & apply** speichert die Startauswahl und wendet sie sofort an.
 **Start** / **Stop** ändern nur den aktuellen Zustand; beim nächsten Boot gilt
-wieder die gespeicherte Auswahl. Jede Modusänderung startet den gemeinsamen
-MMDVMHost neu und unterbricht kurz alle Modi. Das Konfigurationspasswort wird für
+wieder die gespeicherte Auswahl. Bei Board-Zuweisungen betrifft Start/Stop nur das
+zugehörige Board und die darauf gemeinsam betriebenen Modi; andere Boards laufen weiter.
+Save & apply startet weiterhin alle Modem-Prozesse neu. Das Konfigurationspasswort wird für
 die Bedienung benötigt. Einmal `sudo ./install_update.sh` ausführen, um die neuen
 Dienste und Berechtigungen zu installieren. Updates behalten die Startauswahl bei.
 
