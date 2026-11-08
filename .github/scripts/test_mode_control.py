@@ -1,6 +1,7 @@
 """Exercise real INI edits and boot/runtime policy with a simulated unit manager."""
 
 import importlib.util
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -22,7 +23,9 @@ class ModeControlTests(unittest.TestCase):
         self.config.write_text(self.original)
         self.config.chmod(0o664)
         for name, value in (("HOST_CONFIG", self.config),
-                            ("RADIO_CONFIG", self.config.parent / 'radios.json')):
+                            ("RADIO_CONFIG", self.config.parent / 'radios.json'),
+                            ("RUNTIME", self.config.parent / 'runtime'),
+                            ("GATEWAY_DIR", self.config.parent)):
             item = patch.object(controller.radio, name, value)
             item.start()
             self.addCleanup(item.stop)
@@ -47,11 +50,51 @@ class ModeControlTests(unittest.TestCase):
         for unit in units:
             if action in ("enable", "disable"):
                 self.records[unit]["UnitFileState"] = "enabled" if action == "enable" else "disabled"
+            elif action == 'reload':
+                pass
             elif action in ("restart", "stop"):
                 self.records[unit]["ActiveState"] = "active" if action == "restart" else "inactive"
             else:
                 self.fail(f"Unexpected service action: {arguments}")
         return ""
+
+    def enable_supervisor_reload(self):
+        for name in ('ircddbgateway', 'ysfgateway', 'dmrgateway', 'nxdngateway'):
+            (self.config.parent / name).write_text((ROOT / 'configs' / (name + '.sample')).read_text())
+        data = controller.radio.empty_config()
+        data['bindings']['ysf'] = '/dev/serial/by-path/board-ysf'
+        controller.radio.RADIO_CONFIG.write_text(json.dumps(data))
+        controller.radio.RUNTIME.mkdir()
+        self.records['mmdvmhost.service']['MainPID'] = '1234'
+        (controller.radio.RUNTIME / 'status.json').write_text(json.dumps({
+            'supervisor_pid': 1234, 'reload_supported': True, 'updated_at': 0, 'modes': {}}))
+
+    def test_managed_start_reloads_hosts_and_only_restarts_target_gateway(self):
+        self.enable_supervisor_reload()
+        controller.dispatch(['start', 'ysf'])
+        changes = [call for call in self.calls if call[0] != 'show']
+        self.assertEqual(changes, [('--no-block', 'reload', 'mmdvmhost.service'),
+                                   ('--no-block', 'restart', 'ysfgateway.service')])
+
+    def test_managed_stop_reloads_hosts_without_restarting_other_gateways(self):
+        self.enable_supervisor_reload()
+        controller.dispatch(['stop', 'ysf'])
+        changes = [call for call in self.calls if call[0] != 'show']
+        self.assertEqual(changes, [('--no-block', 'stop', 'ysfgateway.service'),
+                                   ('--no-block', 'reload', 'mmdvmhost.service')])
+
+    def test_old_supervisor_report_cannot_signal_new_main_process(self):
+        self.enable_supervisor_reload()
+        self.records['mmdvmhost.service']['MainPID'] = '5678'
+        controller.dispatch(['start', 'ysf'])
+        self.assertFalse(any('reload' in call for call in self.calls))
+        self.assertIn(('--no-block', 'restart', 'mmdvmhost.service', 'ysfgateway.service'), self.calls)
+
+    def test_older_supervisor_without_capability_is_restarted(self):
+        self.enable_supervisor_reload()
+        (controller.radio.RUNTIME / 'status.json').write_text('{"supervisor_pid":1234}')
+        controller.dispatch(['start', 'ysf'])
+        self.assertFalse(any('reload' in call for call in self.calls))
 
     def test_runtime_stop_disables_radio_and_network_without_changing_boot(self):
         controller.dispatch(["stop", "dmr"])

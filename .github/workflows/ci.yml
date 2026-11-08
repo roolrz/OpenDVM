@@ -63,7 +63,9 @@ jobs:
         run: python3 .github/scripts/test_mode_control.py
 
       - name: Test USB board bindings and radio supervision
-        run: python3 .github/scripts/test_radio_config.py
+        run: |
+          python3 .github/scripts/test_radio_config.py
+          python3 .github/scripts/test_radio_host_process.py
 
       - name: Compile status monitor and configuration service
         run: |

@@ -269,9 +269,11 @@ immediately starts or stops the selected modes. The page waits for the backend
 to apply the settings and reports failures.
 
 The **Start** / **Stop** buttons act immediately and leave the saved boot policy
-unchanged. The next reboot restores the boot selection. Mode changes restart the
-MMDVMHost processes, briefly interrupting all modes; gateway connection status can
-take longer to settle. These controls use the Config Password entered on the page.
+unchanged. The next reboot restores the boot selection. With board assignments,
+Start/Stop reloads the supervisor and changes only the affected board's MMDVMHost;
+other modes sharing that board are briefly interrupted. Independent boards keep
+running. Legacy single-host setups still restart the shared host. Gateway connection
+status can take longer to settle. These controls use the Config Password entered on the page.
 
 Run `sudo ./install_update.sh` once to install the mode controller, service hook
 and permissions. Updates preserve boot policy and avoid starting stopped gateways.
@@ -341,9 +343,11 @@ resolve to; review them before saving, which pins them to the stable device path
   to use; all modes on a board share its frequencies.
   Frequencies are also applied to each mode's gateway; BM slot selection follows the
   board bound to DMR. The dashboard shows the frequencies for the boards assigned to the modes.
-- Applying bindings, station settings or mode Start/Stop restarts the modem service and
-  briefly interrupts its boards. Unplugging or a host process exiting only affects that
+- Applying bindings or station settings restarts the modem service once and
+  briefly interrupts its boards. Mode Start/Stop only changes affected boards.
+  Unplugging or a host process exiting only affects that
   board; the supervisor retries it without restarting the other boards.
+  The service journal records board paths, child PIDs, exits and device availability.
 
 Bindings and profiles persist in `/etc/opendvm-radios.json`. The existing
 `mmdvmhost.service` supervises the hosts, with generated configurations under
