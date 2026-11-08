@@ -311,13 +311,19 @@ These changes go directly to BM and do not restart MMDVMHost or DMRGateway.
 
 ### Bind modes to USB hotspot boards
 
-In **Settings**, each of D-Star, DMR, YSF and NXDN has a **Hotspot board** selector.
-Choose a detected USB serial board for each mode, enter the **Config Password**, then
-click **Save & apply** to save board changes together with the station settings.
-**Apply board settings** saves only board profiles and mode assignments. If saving
-boards fails, **Save & apply** stops and retains your edits. If the subsequent station
-save fails, the page reports that board settings have already been saved.
-Use **Reload boards** to rescan devices and discard unsubmitted board edits.
+In **Settings**, **Station** contains identity information only. Configure RX/TX
+frequencies and simplex/duplex once per board under **Radio boards**, then select
+those boards in D-Star, DMR, YSF and NXDN. Serial speed and calibration offsets are
+under each board's **Device details & calibration**. A non-USB serial board has
+its hardware fields in this same section.
+
+Enter **Config Password** and click the single **Save & apply** button to save board
+changes and station settings. Board-save failures retain edits and stop the station
+submission. If the subsequent station save fails, the page explicitly reports that
+board settings have already been saved. **Rescan boards** preserves unsaved edits.
+Mode Start is unavailable while board edits are pending; Stop remains available.
+Legacy USB alias assignments are displayed as the concrete board they currently
+resolve to; review them before saving, which pins them to the stable device paths.
 
 - Different boards run independent MMDVMHost processes and can operate simultaneously.
   Modes assigned to the same board share one process and take turns as before.
@@ -327,14 +333,14 @@ Use **Reload boards** to rescan devices and discard unsubmitted board edits.
 - Prefer `/dev/serial/by-id` identities. A board without a unique serial identity can
   use `/dev/serial/by-path`; keep it plugged into the same USB socket/hub port. USB port
   renumbering does not change saved assignments. Disconnected saved boards stay visible.
-- The **USB hotspot boards** section sets RX/TX frequencies in Hz, simplex/duplex,
+- The **Radio boards** section sets RX/TX frequencies in Hz, simplex/duplex,
   baud rate and RX/TX offsets per detected or saved board. Simplex boards require identical RX/TX
   frequencies. Other modem calibration values inherit `/etc/MMDVMHost.ini`.
   Each board has its own card, even without any mode assigned. Settings remain saved
   when modes are reassigned or the board is unplugged. Modes only select which board
   to use; all modes on a board share its frequencies.
   Frequencies are also applied to each mode's gateway; BM slot selection follows the
-  board bound to DMR. The dashboard's Station header remains the station defaults.
+  board bound to DMR. The dashboard shows the frequencies for the boards assigned to the modes.
 - Applying bindings, station settings or mode Start/Stop restarts the modem service and
   briefly interrupts its boards. Unplugging or a host process exiting only affects that
   board; the supervisor retries it without restarting the other boards.

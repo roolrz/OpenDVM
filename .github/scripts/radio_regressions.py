@@ -21,12 +21,13 @@ def check_radio_bindings(api, request, wait_for, start, stop, logs):
     serial = Path('/dev/serial/by-id')
     serial.mkdir(parents=True, exist_ok=True)
     devices = []
-    for index in (900, 901):
+    for index in (900, 901, 902):
         target = Path(f'/dev/ttyUSB{index}')
         os.mknod(target, stat.S_IFCHR | 0o666, os.makedev(1, 3))
         link = serial / f'opendvm-ci-{index}'
         link.symlink_to(target)
         devices.append(str(link))
+    Path('/dev/mmdvm').symlink_to('/dev/ttyUSB900')
     data = json.loads(request('mode_control.php?q=radios'))
     assert data['ok'] and {item['device'] for item in data['devices']} >= set(devices)
     assert data['profiles'] == {}, 'An empty profiles map must remain a JSON object through PHP'
@@ -45,20 +46,34 @@ def check_radio_bindings(api, request, wait_for, start, stop, logs):
     wait = WebDriverWait(browser, 20)
     try:
         browser.get('http://127.0.0.1:8080/setup.html')
-        wait.until(lambda driver: driver.find_element(By.ID, 'radioApply').is_enabled()
+        wait.until(lambda driver: driver.execute_script('return window.__radioReady === true')
                    and driver.find_element(By.ID, 'saveBtn').is_enabled())
+        assert not browser.find_elements(By.CSS_SELECTOR, '.station #RXFrequency, .station #TXFrequency, .station #Duplex')
+        assert not browser.find_elements(By.ID, 'radioApply')
+        assert not browser.find_element(By.ID, 'legacyBoard').is_displayed()
+        assert len(browser.find_elements(By.CSS_SELECTOR, '#radioProfiles .radio-profile')) == 3
+        assert browser.find_element(By.ID, 'radioManager').location['y'] < browser.find_element(By.CSS_SELECTOR, '.tile.dstar').location['y']
         original_callsign = api('config_inbox')['Callsign']
         callsign = browser.find_element(By.ID, 'Callsign')
         callsign.clear()
         callsign.send_keys('DL9USB')
         Select(browser.find_element(By.ID, 'dmrBoard')).select_by_value(devices[0])
-        for card in browser.find_elements(By.CSS_SELECTOR, '.radio-profile'):
-            frequency = 432100000 if card.get_attribute('data-device') == devices[0] else 433500000
+        Select(browser.find_element(By.ID, 'ysfBoard')).select_by_value(devices[1])
+        Select(browser.find_element(By.ID, 'nxdnBoard')).select_by_value(devices[2])
+        for card in browser.find_elements(By.CSS_SELECTOR, '#radioProfiles .radio-profile'):
+            frequency = [432100000, 433500000, 434900000][devices.index(card.get_attribute('data-device'))]
             for field, value in (('rx_frequency', frequency), ('tx_frequency', frequency), ('duplex', 0)):
-                control = card.find_element(By.CSS_SELECTOR, f'input[id$="-{field}"]')
-                control.clear()
-                control.send_keys(str(value))
+                control = card.find_element(By.CSS_SELECTOR, f'[id$="-{field}"]')
+                if field == 'duplex':
+                    Select(control).select_by_value(str(value))
+                else:
+                    control.clear()
+                    control.send_keys(str(value))
+        browser.find_element(By.ID, 'radioReload').click()
+        wait.until(lambda driver: 'rescanned' in driver.find_element(By.ID, 'radioResult').text)
+        assert browser.find_element(By.ID, 'board-0-rx_frequency').get_attribute('value') == '432100000'
         password = browser.find_element(By.ID, 'ConfigPassword')
+        password.clear()
         password.send_keys('wrong-password')
         browser.find_element(By.ID, 'saveBtn').click()
         wait.until(lambda driver: driver.find_element(By.ID, 'formState').text == 'error')
@@ -76,12 +91,17 @@ def check_radio_bindings(api, request, wait_for, start, stop, logs):
         assert saved['bindings']['dmr'] == devices[0]
         assert saved['profiles'][devices[0]]['rx_frequency'] == 432100000
         assert saved['profiles'][devices[1]]['tx_frequency'] == 433500000
+        assert saved['profiles'][devices[2]]['rx_frequency'] == 434900000
         assert api('config_inbox')['Callsign'] == 'DL9USB'
         browser.get('http://127.0.0.1:8080/setup.html')
-        wait.until(lambda driver: driver.find_element(By.ID, 'radioApply').is_enabled())
+        wait.until(lambda driver: driver.execute_script('return window.__radioReady === true'))
         assert Select(browser.find_element(By.ID, 'dmrBoard')).first_selected_option.get_attribute('value') == devices[0]
-        assert len(browser.find_elements(By.CSS_SELECTOR, '.radio-profile')) == 2
+        assert len(browser.find_elements(By.CSS_SELECTOR, '#radioProfiles .radio-profile')) == 3
         browser.save_screenshot(str(logs / 'first-board-save.png'))
+        browser.get('http://127.0.0.1:8080/index.html')
+        wait.until(lambda driver: all(value in driver.find_element(By.ID, 'freqSpan').text
+                                      for value in ('432.100', '433.500', '434.900')))
+        browser.save_screenshot(str(logs / 'board-frequencies-dashboard.png'))
     finally:
         browser.quit()
     data = json.loads(request('mode_control.php?q=radios'))
@@ -134,27 +154,31 @@ def check_radio_bindings(api, request, wait_for, start, stop, logs):
             };
         '''})
         browser.get('http://127.0.0.1:8080/setup.html')
-        wait.until(lambda driver: driver.find_element(By.ID, 'radioApply').is_enabled())
+        wait.until(lambda driver: driver.execute_script('return window.__radioReady === true'))
         assert browser.execute_script('return window.__radioScanAttempts') == 2
         assert Select(browser.find_element(By.ID, 'ysfBoard')).first_selected_option.get_attribute('value') == devices[0]
-        assert len(browser.find_elements(By.CSS_SELECTOR, '.radio-profile')) == 2
+        assert len(browser.find_elements(By.CSS_SELECTOR, '#radioProfiles .radio-profile')) == 3
         assert 'not connected' in Select(browser.find_element(By.ID, 'ysfBoard')).first_selected_option.text
         # Board cards are independent of mode assignments, including saved
         # unplugged boards. Save different frequencies with no modes assigned.
         for mode in bindings:
             Select(browser.find_element(By.ID, mode + 'Board')).select_by_value('')
-        assert len(browser.find_elements(By.CSS_SELECTOR, '.radio-profile')) == 2
-        expected = {devices[0]: 432100000, devices[1]: 433500000}
-        for card in browser.find_elements(By.CSS_SELECTOR, '.radio-profile'):
+            checkbox = browser.find_element(By.CSS_SELECTOR, f'.mode-controls[data-mode="{mode}"] input')
+            if checkbox.is_selected():
+                checkbox.click()
+        assert len(browser.find_elements(By.CSS_SELECTOR, '#radioProfiles .radio-profile')) == 3
+        expected = {devices[0]: 432100000, devices[1]: 433500000, devices[2]: 434900000}
+        for card in browser.find_elements(By.CSS_SELECTOR, '#radioProfiles .radio-profile'):
             frequency = expected[card.get_attribute('data-device')]
             for field in ('rx_frequency', 'tx_frequency'):
-                control = card.find_element(By.CSS_SELECTOR, f'input[id$="-{field}"]')
+                control = card.find_element(By.CSS_SELECTOR, f'[id$="-{field}"]')
                 control.clear()
                 control.send_keys(str(frequency))
         password = browser.find_element(By.ID, 'ConfigPassword')
+        password.clear()
         password.send_keys(PASSWORD)
-        browser.find_element(By.ID, 'radioApply').click()
-        wait.until(lambda driver: driver.find_element(By.ID, 'radioApply').is_enabled())
+        browser.find_element(By.ID, 'saveBtn').click()
+        wait.until(lambda driver: driver.find_element(By.ID, 'formState').text == 'applied')
         assert 'Board settings saved' in browser.find_element(By.ID, 'radioResult').text
         saved = json.loads(Path('/etc/opendvm-radios.json').read_text())
         for device, frequency in expected.items():
@@ -162,18 +186,19 @@ def check_radio_bindings(api, request, wait_for, start, stop, logs):
             assert saved['profiles'][device]['tx_frequency'] == frequency
         assert not any(saved['bindings'].values())
         browser.get('http://127.0.0.1:8080/setup.html')
-        wait.until(lambda driver: driver.find_element(By.ID, 'radioApply').is_enabled())
-        cards = browser.find_elements(By.CSS_SELECTOR, '.radio-profile')
-        assert len(cards) == 2
+        wait.until(lambda driver: driver.execute_script('return window.__radioReady === true'))
+        cards = browser.find_elements(By.CSS_SELECTOR, '#radioProfiles .radio-profile')
+        assert len(cards) == 3
         for card in cards:
             frequency = expected[card.get_attribute('data-device')]
             assert int(card.find_element(By.CSS_SELECTOR, 'input[id$="-rx_frequency"]').get_attribute('value')) == frequency
         # Reassign a mode without losing either board's profile.
         Select(browser.find_element(By.ID, 'ysfBoard')).select_by_value(devices[1])
         password = browser.find_element(By.ID, 'ConfigPassword')
+        password.clear()
         password.send_keys(PASSWORD)
-        browser.find_element(By.ID, 'radioApply').click()
-        wait.until(lambda driver: driver.find_element(By.ID, 'radioApply').is_enabled())
+        browser.find_element(By.ID, 'saveBtn').click()
+        wait.until(lambda driver: driver.find_element(By.ID, 'formState').text == 'applied')
         assert 'Board settings saved' in browser.find_element(By.ID, 'radioResult').text
         reassigned = json.loads(Path('/etc/opendvm-radios.json').read_text())
         assert reassigned['bindings']['ysf'] == devices[1]
@@ -185,7 +210,8 @@ def check_radio_bindings(api, request, wait_for, start, stop, logs):
     request('mode_control.php', {'action': 'configure-radios', 'ConfigPassword': PASSWORD,
                                 'radios': json.dumps(dict(bindings={mode: '' for mode in bindings},
                                                          profiles={}, revision=snapshot['revision']))})
-    for index, device in zip((900, 901), devices):
+    Path('/dev/mmdvm').unlink()
+    for index, device in zip((900, 901, 902), devices):
         Path(device).unlink(missing_ok=True)
         Path(f'/dev/ttyUSB{index}').unlink()
 

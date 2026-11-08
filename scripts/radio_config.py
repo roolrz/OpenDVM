@@ -118,7 +118,9 @@ def snapshot():
     legacy_board = next((item['device'] for item in devices
                          if Path(item['device']).resolve() == Path(legacy).resolve()), '')
     return {'ok': True, **data, 'devices': devices, 'defaults': defaults(),
-            'legacy_device': legacy, 'legacy_board': legacy_board, 'revision': revision}
+            'legacy_device': legacy, 'legacy_board': legacy_board,
+            'legacy_is_usb': bool(re.fullmatch(r'tty(?:USB|ACM)\d+', Path(legacy).resolve().name)),
+            'legacy_present': available(legacy), 'revision': revision}
 
 
 def validate(data):
