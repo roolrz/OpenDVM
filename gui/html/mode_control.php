@@ -21,7 +21,7 @@ if ($method === 'POST') {
     }
     $action = $_POST['action'] ?? '';
     $mode = $_POST['mode'] ?? '';
-    if ($action === 'configure-radios') {
+    if (in_array($action, ['configure-radios', 'save-radios'], true)) {
         $input = $_POST['radios'] ?? '';
         if (!is_string($input) || strlen($input) > 65536 || !is_array(json_decode($input, true))) {
             mode_response(400, ['ok' => false, 'error' => 'Invalid USB board settings']);
