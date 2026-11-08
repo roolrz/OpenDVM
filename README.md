@@ -255,11 +255,11 @@ The most important settings can be configured in the SETUP window:
 
    * Your callsign
    * Your DMR ID (if required, click the link below the DMR ID field to open the DMR database)
-   * Set Duplex = 0 (set to 1 ONLY if you are using a repeater board)
-   * Set RX and TX frequencies. For **Hotspots use the same RX and TX frequency**, otherwise DMR networking will not work. For **Repeaters use different RX and TX frequencies**.
+   * Under **Radio boards**, choose **Simplex** or **Duplex** for each board to match its hardware.
+   * Set each board’s RX and TX frequencies. **Simplex** requires the same RX and TX frequency; **Duplex** supports separate frequencies.
    * Enter your Brandmeister password (as configured in SelfCare on the BM Dashboard)
    * Enter the Config Password (default: `setuppassword`). To change it, run `sudoedit /etc/opendvm/config-password`. Installation migrates an existing password from `save_config.php`; updates preserve it.
-   * Choose **Start on boot** for D-Star, DMR and YSF, then click **Save & apply**.
+   * Select a board for each mode you want to use, choose **Start on boot**, then click **Save & apply**.
 
    If you receive a green confirmation message, the configuration has been successfully stored.
 
@@ -355,8 +355,8 @@ avoid sharing their resources across processes.
 
 Run `install_update.sh` when upgrading an existing installation: it installs the host
 supervisor and systemd override as well as the web controls. Board configuration is
-preserved across updates. Save station settings before assigning new board profiles so
-their initial values use your configured station defaults.
+preserved across updates. New board cards start with values from the existing host
+configuration; review each board’s values and assignments before Save & apply.
 The manager applies only differences, adds before removing, and reads the lists
 back before reporting success. If BM rejects a request, cannot confirm the result
 or has changed since the lists were loaded, refresh before retrying. A failed
