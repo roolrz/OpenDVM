@@ -79,6 +79,7 @@ def check_mode_controls(api, request, wait_for, logs):
         browser.get("http://127.0.0.1:8080/setup.html")
         wait.until(lambda driver: driver.find_element(By.ID, "saveBtn").is_enabled())
         for field, value in (("ConfigPassword", PASSWORD), ("Callsign", "DL8CI"),
+                             ("RXFrequency", "431750000"), ("TXFrequency", "431750000"),
                              ("NxdnId", "12345"), ("NxdnRAN", "7"), ("NxdnStatic", "10200,65000")):
             element = browser.find_element(By.ID, field)
             element.clear()

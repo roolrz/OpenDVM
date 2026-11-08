@@ -255,11 +255,11 @@ The most important settings can be configured in the SETUP window:
 
    * Your callsign
    * Your DMR ID (if required, click the link below the DMR ID field to open the DMR database)
-   * Set Duplex = 0 (set to 1 ONLY if you are using a repeater board)
-   * Set RX and TX frequencies. For **Hotspots use the same RX and TX frequency**, otherwise DMR networking will not work. For **Repeaters use different RX and TX frequencies**.
+   * Under **Radio boards**, choose **Simplex** or **Duplex** for each board to match its hardware.
+   * Set each board’s RX and TX frequencies. **Simplex** requires the same RX and TX frequency; **Duplex** supports separate frequencies.
    * Enter your Brandmeister password (as configured in SelfCare on the BM Dashboard)
    * Enter the Config Password (default: `setuppassword`). To change it, run `sudoedit /etc/opendvm/config-password`. Installation migrates an existing password from `save_config.php`; updates preserve it.
-   * Choose **Start on boot** for D-Star, DMR and YSF, then click **Save & apply**.
+   * Select a board for each mode you want to use, choose **Start on boot**, then click **Save & apply**.
 
    If you receive a green confirmation message, the configuration has been successfully stored.
 
@@ -311,10 +311,19 @@ These changes go directly to BM and do not restart MMDVMHost or DMRGateway.
 
 ### Bind modes to USB hotspot boards
 
-In **Settings**, each of D-Star, DMR, YSF and NXDN has a **Hotspot board** selector.
-Choose a detected USB serial board for each mode, enter the **Config Password**, then
-click **Apply board settings**. This saves board assignments separately from **Save & apply**.
-Use **Reload boards** to rescan devices and discard unsubmitted board edits.
+In **Settings**, **Station** contains identity information only. Configure RX/TX
+frequencies and simplex/duplex once per board under **Radio boards**, then select
+those boards in D-Star, DMR, YSF and NXDN. Serial speed and calibration offsets are
+under each board's **Device details & calibration**. A non-USB serial board has
+its hardware fields in this same section.
+
+Enter **Config Password** and click the single **Save & apply** button to save board
+changes and station settings. Board-save failures retain edits and stop the station
+submission. If the subsequent station save fails, the page explicitly reports that
+board settings have already been saved. **Rescan boards** preserves unsaved edits.
+Mode Start is unavailable while board edits are pending; Stop remains available.
+Legacy USB alias assignments are displayed as the concrete board they currently
+resolve to; review them before saving, which pins them to the stable device paths.
 
 - Different boards run independent MMDVMHost processes and can operate simultaneously.
   Modes assigned to the same board share one process and take turns as before.
@@ -324,14 +333,14 @@ Use **Reload boards** to rescan devices and discard unsubmitted board edits.
 - Prefer `/dev/serial/by-id` identities. A board without a unique serial identity can
   use `/dev/serial/by-path`; keep it plugged into the same USB socket/hub port. USB port
   renumbering does not change saved assignments. Disconnected saved boards stay visible.
-- The **USB hotspot boards** section sets RX/TX frequencies in Hz, simplex/duplex,
+- The **Radio boards** section sets RX/TX frequencies in Hz, simplex/duplex,
   baud rate and RX/TX offsets per detected or saved board. Simplex boards require identical RX/TX
   frequencies. Other modem calibration values inherit `/etc/MMDVMHost.ini`.
   Each board has its own card, even without any mode assigned. Settings remain saved
   when modes are reassigned or the board is unplugged. Modes only select which board
   to use; all modes on a board share its frequencies.
   Frequencies are also applied to each mode's gateway; BM slot selection follows the
-  board bound to DMR. The dashboard's Station header remains the station defaults.
+  board bound to DMR. The dashboard shows the frequencies for the boards assigned to the modes.
 - Applying bindings, station settings or mode Start/Stop restarts the modem service and
   briefly interrupts its boards. Unplugging or a host process exiting only affects that
   board; the supervisor retries it without restarting the other boards.
@@ -346,8 +355,8 @@ avoid sharing their resources across processes.
 
 Run `install_update.sh` when upgrading an existing installation: it installs the host
 supervisor and systemd override as well as the web controls. Board configuration is
-preserved across updates. Save station settings before assigning new board profiles so
-their initial values use your configured station defaults.
+preserved across updates. New board cards start with values from the existing host
+configuration; review each board’s values and assignments before Save & apply.
 The manager applies only differences, adds before removing, and reads the lists
 back before reporting success. If BM rejects a request, cannot confirm the result
 or has changed since the lists were loaded, refresh before retrying. A failed

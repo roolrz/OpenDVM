@@ -1792,6 +1792,8 @@
 
       async function loadLocalConfig() {
         try {
+          const boardsRequest = fetch('mode_control.php?q=radios', {cache: 'no-store'})
+            .then(response => response.ok ? response.json() : null).catch(() => null);
           const r = await fetch("api.php?q=localconfig", { cache: "no-store" });
           if (!r.ok) throw new Error(r.status + " " + r.statusText);
           const d = await r.json();
@@ -1805,7 +1807,7 @@
           }
           window.localcfg = d || {};
           applyLocalHeader(window.localcfg);
-          applySublineFreqs(window.localcfg);
+          applySublineFreqs(window.localcfg, await boardsRequest);
           initOrUpdateMap(window.localcfg);
         } catch (e) {
           console.error(e);
@@ -1819,8 +1821,7 @@
         const cs = sanitizeCallsign(d.callsign || "");
         if (!cs) return; // wenn kein Callsign vorhanden, nichts ändern
 
-        const role = Number(d.duplex) === 1 ? "Repeater" : "Station";
-        h1.textContent = `${cs} OpenDVM Multimode ${role} V1.1`;
+        h1.textContent = `${cs} OpenDVM Multimode V1.1`;
       }
 
       function fmtMHz(hz) {
@@ -1829,14 +1830,13 @@
         return (n / 1e6).toFixed(3) + " MHz";
       }
 
-      function applySublineFreqs(d) {
+      function applySublineFreqs(d, boards) {
         const sub = document.getElementById("subline");
         const link = document.getElementById("repoLink");
         if (!sub || !link || !d) return;
 
         // bestehenden Frequenz-Span wiederverwenden/ersetzen
         let span = document.getElementById("freqSpan");
-        const text = ` RX: ${fmtMHz(d.rxfreq)} TX: ${fmtMHz(d.txfreq)} `;
 
         if (!span) {
           span = document.createElement("span");
@@ -1846,7 +1846,27 @@
           // direkt vor den Link
           sub.insertBefore(span, link);
         }
-        span.textContent = text;
+        span.replaceChildren();
+        if (!boards?.ok) {
+          span.textContent = ' Board frequencies unavailable ';
+          return;
+        }
+        const groups = new Map();
+        const names = {dstar: 'D-Star', dmr: 'DMR', ysf: 'YSF', nxdn: 'NXDN'};
+        Object.entries(boards.bindings).forEach(([mode, binding]) => {
+          const device = binding || boards.legacy_board || boards.legacy_device;
+          if (!groups.has(device)) groups.set(device, []);
+          groups.get(device).push(names[mode] || mode);
+        });
+        span.style.display = 'inline-flex';
+        span.style.flexWrap = 'wrap';
+        span.style.gap = '4px 16px';
+        for (const [device, modes] of groups) {
+          const profile = boards.profiles?.[device] || boards.defaults;
+          const item = document.createElement('span');
+          item.textContent = `${groups.size > 1 ? modes.join('/') + ': ' : ''}RX ${fmtMHz(profile.rx_frequency)} · TX ${fmtMHz(profile.tx_frequency)} `;
+          span.append(item);
+        }
       }
 
       let map, mapLayer, mapMarker, mapCircle;
@@ -1900,14 +1920,11 @@
         }
 
         const cs = sanitizeCallsign(d.callsign || "");
-        const role = Number(d.duplex) === 1 ? "Repeater" : "Station";
-        const popup = `<b>${cs || "—"}</b> · ${role}<br>${fmtCoord(lat, true)} · ${fmtCoord(lon, false)}`;
+        const popup = `<b>${cs || "—"}</b><br>${fmtCoord(lat, true)} · ${fmtCoord(lon, false)}`;
         mapMarker.bindPopup(popup);
 
         if (meta) {
-          const rx = fmtMHz(d.rxfreq);
-          const tx = fmtMHz(d.txfreq);
-          meta.textContent = `QTH: ${fmtCoord(lat, true)} · ${fmtCoord(lon, false)} · RX ${rx} · TX ${tx}`;
+          meta.textContent = `QTH: ${fmtCoord(lat, true)} · ${fmtCoord(lon, false)}`;
         }
 
         // Workaround: nach Render kurz Größe neu berechnen

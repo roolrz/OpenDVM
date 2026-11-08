@@ -119,6 +119,11 @@ class RadioTests(unittest.TestCase):
         self.assertFalse(radio.managed(data))
         data['profiles'][str(real)] = self.profile
         self.assertTrue(radio.managed(data))
+        radio.atomic_write(radio.RADIO_CONFIG, json.dumps(data))
+        with patch.object(radio, 'discover', return_value=[]):
+            snapshot = radio.snapshot()
+        self.assertEqual(snapshot['legacy_board'], str(real))
+        self.assertTrue(snapshot['legacy_is_usb'])
         plans = radio.plans(data)
         self.assertEqual(len(plans), 1)
         self.assertEqual(self.parse(plans[0])['Info']['RXFrequency'], '431750000')

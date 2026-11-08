@@ -18,7 +18,7 @@
       font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Open Sans","Helvetica Neue",Arial,sans-serif;
     }
     header{
-      position:sticky; top:0; backdrop-filter:blur(8px); background:#0006;
+      position:relative; background:#000b;
       border-bottom:1px solid var(--border); padding:18px 20px; text-align:center;
     }
     header h1{margin:0; font-size:28px; letter-spacing:.2px}
@@ -60,13 +60,23 @@
     .mode-controls output{font-size:13px; color:var(--muted)}
     .bm-manager{margin-top:20px; border-top:1px solid var(--border); padding-top:16px}
     .bm-manager h3{font-size:15px; margin:0 0 12px}
-    .bm-manager [hidden]{display:none}
+    [hidden]{display:none !important}
     .bm-buttons{display:flex; flex-wrap:wrap; gap:10px; margin:12px 0}
     .bm-result{font-size:13px; overflow-wrap:anywhere}
     .radio-binding{margin-bottom:16px}
     .radio-profile{border-top:1px solid var(--border); padding-top:14px; margin-top:14px}
     .radio-profile h3{font-size:14px; overflow-wrap:anywhere}
     .radio-profile .row{margin-bottom:12px}
+    #radioProfiles{display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr)); gap:14px}
+    #radioProfiles .row{grid-template-columns:1fr}
+    .radio-profile{border:1px solid var(--border); border-radius:12px; padding:16px; background:var(--tile-alt)}
+    .radio-profile h3{margin:0 0 8px}
+    .radio-profile details{margin-top:12px}
+    .radio-profile summary{cursor:pointer; color:var(--muted); font-size:13px; margin-bottom:12px}
+    .board-heading{display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px}
+    .board-path{overflow-wrap:anywhere}
+    .board-assignment{margin:8px 0 14px}
+    .board-status{white-space:nowrap; font-size:12px; color:var(--muted)}
     #radioManager, .radio-profile{scroll-margin-top:110px}
     #radioResult{font-size:13px; overflow-wrap:anywhere}
     button:disabled{opacity:.5; cursor:wait}
@@ -179,7 +189,7 @@
 <body>
   <header>
     <h1>OpenDVM – Configuration</h1>
-    <div class="hint">Latitude/Longitude accept comma <b>,</b> or dot <b>.</b>. Frequency fields are integer Hz.</div>
+    <div class="hint">Latitude/Longitude accept comma <b>,</b> or dot <b>.</b>. Configure boards, assign modes, then Save &amp; apply.</div>
   </header>
 
   <main>
@@ -212,27 +222,6 @@
             <a class="hint" href="https://radioid.net/database" target="_blank" rel="noopener">
               https://radioid.net/database
             </a>
-          </div>
-          <div class="field">
-            <label for="Duplex">Duplex</label>
-            <select id="Duplex" name="Duplex">
-              <option value="1" selected>1 = Repeater</option>
-              <option value="0">0 = Station/Hotspot</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="row">
-          <div class="field">
-            <label for="RXFrequency">RXFrequency (Hz)</label>
-            <input id="RXFrequency" name="RXFrequency" type="number" inputmode="numeric" class="mono"
-              required min="1000000" step="1" value="431850000" />
-            <div id="freq_hint" class="hint"></div>
-          </div>
-          <div class="field">
-            <label for="TXFrequency">TXFrequency (Hz)</label>
-            <input id="TXFrequency" name="TXFrequency" type="number" inputmode="numeric" class="mono"
-              required min="1000000" step="1" value="439450000" />
           </div>
         </div>
       </section>
@@ -272,6 +261,46 @@
             <input id="URL" name="URL" type="text" placeholder="www.yourURL.de" value="http://www.yourURL.de" />
           </div>
         </div>
+      </section>
+
+      <section class="tile center" id="radioManager">
+        <h2>Radio boards</h2>
+        <p class="hint">Set the frequencies and operating mode for each board here, then assign boards to
+          D-Star, DMR, YSF and NXDN below. Modes on the same board share its settings.</p>
+        <div class="bm-buttons">
+          <button type="button" id="radioReload">Rescan boards</button>
+          <span id="radioCount" class="hint">Loading boards…</span>
+        </div>
+        <div id="legacyBoard" class="radio-profile" hidden>
+          <h3>Configured serial board</h3>
+          <p id="legacyDevice" class="hint mono"></p>
+          <div class="row">
+          <div class="field">
+            <label for="Duplex">Duplex</label>
+            <select id="Duplex" name="Duplex">
+              <option value="1" selected>Duplex — separate RX / TX</option>
+              <option value="0">Simplex — same RX / TX</option>
+            </select>
+          </div>
+          </div>
+        <div class="row">
+          <div class="field">
+            <label for="RXFrequency">RX frequency (Hz)</label>
+            <input id="RXFrequency" name="RXFrequency" type="number" inputmode="numeric" class="mono"
+              required min="1000000" step="1" value="431850000" />
+            <div id="freq_hint" class="hint"></div>
+          </div>
+          <div class="field">
+            <label for="TXFrequency">TX frequency (Hz)</label>
+            <input id="TXFrequency" name="TXFrequency" type="number" inputmode="numeric" class="mono"
+              required min="1000000" step="1" value="439450000" />
+          </div>
+        </div>
+        </div>
+        <div id="radioProfiles"></div>
+        <div id="radioResult" role="status" aria-live="polite">Loading board settings…</div>
+        <p class="hint">All changes are saved with Save &amp; apply at the bottom of this page.
+          Boards identified by USB port must stay in the same socket.</p>
       </section>
 
       <!-- TILE: D-Star -->
@@ -454,24 +483,6 @@
         </div>
       </section>
 
-      <section class="tile center" id="radioManager">
-        <h2>USB hotspot boards &amp; frequencies</h2>
-        <p class="hint">Configure each USB board here, even before assigning a mode. RX/TX frequencies are in Hz
-          (for example, 431750000 = 431.750 MHz). Each board can use different frequencies;
-          a simplex board must use matching RX and TX frequencies.
-          Modes sharing a board share its frequencies and take turns;
-          different boards can operate at the same time. Saved USB identities survive serial port renumbering.
-          Devices identified by USB path must stay in the same USB socket.</p>
-        <div id="radioProfiles"></div>
-        <div class="bm-buttons">
-          <button type="button" id="radioReload">Reload boards</button>
-          <button type="button" id="radioApply" class="primary" disabled>Apply board settings</button>
-        </div>
-        <div id="radioResult" role="status" aria-live="polite">Loading USB boards…</div>
-        <p class="hint">Use the Config Password below. Applying board settings restarts the radio processes and
-          active gateways, briefly interrupting all modes. Board frequencies override the Station defaults.</p>
-      </section>
-
       <section class="tile center actions-tile">
         <h2>Actions</h2>
 
@@ -497,7 +508,8 @@
         </div>
 
         <div id="msg" class="hint"></div>
-        <p class="hint">Save &amp; apply sets each mode's boot policy and starts or stops its radio and gateway now.
+        <p class="hint">Save &amp; apply saves board changes, station settings and each mode's boot policy,
+          then starts or stops its radio and gateway now.
           Start / Stop only changes the current session. Applying mode changes restarts the modem processes
           and briefly interrupts all modes.</p>
       </section>
@@ -520,8 +532,8 @@
       function update(){
         if (!hint || !duplex) return;
         hint.textContent = (duplex.value === '0')
-          ? 'RX and TX frequencies should be the same, if possible.'
-          : 'The RX and TX frequencies must differ by the repeater offset.';
+          ? 'Simplex requires matching RX and TX frequencies.'
+          : 'Enter this board’s receive and transmit frequencies.';
       }
 
       duplex && duplex.addEventListener('change', update);
@@ -605,9 +617,10 @@
 
     function updateControls(){
       const bmBusy = Boolean(window.__bmBusy);
-      saveBtn.disabled = saving || modeBusy || bmBusy || !modesReady || !configReady;
+      saveBtn.disabled = saving || modeBusy || bmBusy || !modesReady || !configReady || !window.__radioReady;
       document.querySelectorAll('.mode-controls button').forEach(button => {
-        button.disabled = saving || modeBusy || bmBusy || !modesReady;
+        button.disabled = saving || modeBusy || bmBusy || !modesReady ||
+          (button.dataset.action === 'start' && (!window.__radioReady || window.__radioDirty));
       });
       bootFields.forEach(id => { document.getElementById(id).disabled = saving || !modesReady; });
       if (window.__updateBmControls) window.__updateBmControls(saving || modeBusy);
@@ -828,7 +841,7 @@
       // URL darf ohne Schema eingegeben werden → keine Fehlermeldung mehr nötig
       const cfgPw = document.getElementById('ConfigPassword').value;
       if (!cfgPw.trim()){
-        msg.innerHTML = `<span class="error">Config Password benötigt.</span>`;
+        msg.innerHTML = `<span class="error">Enter Config Password to save.</span>`;
         return false;
       }
       return true;
@@ -875,13 +888,13 @@
 
     form.addEventListener('submit', async (e)=>{
       e.preventDefault();
-      if (saving || modeBusy || window.__bmBusy || !modesReady || !configReady) return;
-      if (window.__radioDirty) { showSnack('Apply board settings first, or reload boards to discard those edits'); return; }
+      if (saving || modeBusy || window.__bmBusy || !modesReady || !configReady || !window.__radioReady) return;
       if (!validate()){
         state.textContent = 'error';
         state.style.color = '#e5484d';
         return;
       }
+      if (window.__validateRadioSettings && !window.__validateRadioSettings()) return;
       // callsign in Uppercase
       const el = document.getElementById('Callsign');
       el.value = el.value.toLocaleUpperCase('de-DE').trim();
@@ -889,7 +902,15 @@
       state.textContent = 'saving…';
       saving = true;
       updateControls();
+      let boardsSaved = false;
       try{
+        if (window.__radioDirty) {
+          state.textContent = 'saving boards…';
+          if (!window.__saveRadioSettings || !await window.__saveRadioSettings()) {
+            throw new Error('Board settings were not saved: ' + document.getElementById('radioResult').textContent);
+          }
+          boardsSaved = true;
+        }
         const body = serializeForm(form);
         const r = await fetch('save_config.php', {
           method:'POST',
@@ -917,13 +938,13 @@
           const errTxt = (data && data.error) ? data.error : (r.status+' '+r.statusText);
           state.textContent = 'error';
           state.style.color = '#e5484d';
-          msg.textContent = 'Save failed: ' + errTxt;
+          msg.textContent = (boardsSaved ? 'Board settings saved; station settings failed: ' : 'Save failed: ') + errTxt;
           showSnack('Save error');
         }
       } catch(ex){
         state.textContent = 'error';
         state.style.color = '#e5484d';
-        msg.textContent = ex.message;
+        msg.textContent = (boardsSaved ? 'Board settings saved; station save/apply failed: ' : '') + ex.message;
         showSnack('Save / apply failed');
       } finally {
         saving = false;
@@ -996,6 +1017,7 @@
         if (window.__updateFreqHint) window.__updateFreqHint();
         if (window.__applyDefaultFlags) window.__applyDefaultFlags();
         configReady = true;
+        if (window.__refreshBoardSummaries) window.__refreshBoardSummaries();
         updateControls();
         } catch (e) {
           console.error('preload failed', e);
@@ -1003,7 +1025,7 @@
     })();
 
   </script>
-  <script src="js/radio-bindings.js?v=3"
+  <script src="js/radio-bindings.js?v=5"
     onerror="document.getElementById('radioResult').textContent = 'Board controls could not load. Refresh this page or update OpenDVM.';"></script>
 </body>
 </html>
