@@ -17,6 +17,81 @@ import radio_config as radio
 
 
 class SupervisorProcessTests(unittest.TestCase):
+    def test_hung_board_shutdown_keeps_heartbeat_and_prevents_duplicate_open(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            host = root / 'MMDVMHost.ini'
+            host.write_text((ROOT / 'configs/MMDVMHost.ini.sample').read_text())
+            config, runtime = root / 'radios.json', root / 'runtime'
+            dmr, ysf = root / 'dmr', root / 'ysf'
+            dmr.symlink_to('/dev/null')
+            ysf.symlink_to('/dev/zero')
+            data = radio.empty_config()
+            data['bindings'].update(dmr=str(dmr), ysf=str(ysf))
+            config.write_text(json.dumps(data))
+            fake_host = root / 'fake-host'
+            fake_host.write_text(
+                f'#!{sys.executable}\nimport configparser, signal, sys, time\n'
+                'from pathlib import Path\nc=configparser.ConfigParser()\nc.read(sys.argv[1])\n'
+                'if c.getboolean("System Fusion", "Enable"):\n'
+                ' signal.signal(signal.SIGTERM, signal.SIG_IGN)\n'
+                'Path(sys.argv[1]+".ready").write_text("ready")\n'
+                'while True: time.sleep(1)\n')
+            fake_host.chmod(0o755)
+            runner = root / 'supervisor.py'
+            runner.write_text(
+                f'import sys\nsys.path.insert(0, {str(ROOT / "scripts")!r})\n'
+                'from pathlib import Path\nimport radio_config as radio\nimport radio_host\n'
+                f'radio.HOST_CONFIG=Path({str(host)!r})\n'
+                f'radio.RADIO_CONFIG=Path({str(config)!r})\n'
+                f'radio.RUNTIME=Path({str(runtime)!r})\n'
+                f'radio_host.BINARY={str(fake_host)!r}\n'
+                'radio_host.STOP_TIMEOUT=4\nradio_host.main()\n')
+            with patch.object(mode_control, 'HOST_CONFIG', host), (root / 'events.log').open('w') as log:
+                mode_control.write_radio_flags(dict(dstar=False, dmr=True, ysf=True, nxdn=False))
+                supervisor = subprocess.Popen([sys.executable, str(runner)], stdout=log, stderr=log)
+
+                def wait_for(predicate, timeout=10):
+                    deadline = time.monotonic() + timeout
+                    while time.monotonic() < deadline:
+                        try:
+                            report = json.loads((runtime / 'status.json').read_text())
+                            if predicate(report):
+                                return report
+                        except (OSError, ValueError):
+                            pass
+                        time.sleep(0.05)
+                    self.fail('Expected state not reached:\n' + (root / 'events.log').read_text())
+
+                try:
+                    initial = wait_for(lambda r: len(list(runtime.glob('*.ready'))) == 2)
+                    old_pid = initial['modes']['ysf']['pid']
+                    dmr_pid = initial['modes']['dmr']['pid']
+                    ysf.unlink()
+                    missing = wait_for(lambda r: r['modes']['ysf']['state'] == 'missing')
+                    ysf.symlink_to('/dev/zero')
+                    # Observe several live heartbeats while the old YSF child
+                    # ignores SIGTERM. The old blocking wait fails this check.
+                    for _ in range(2):
+                        fresh = wait_for(lambda r: r['updated_at'] > missing['updated_at'], timeout=2.5)
+                        self.assertEqual(fresh['modes']['dmr']['pid'], dmr_pid)
+                        self.assertEqual(fresh['modes']['dmr']['state'], 'active')
+                        self.assertIsNone(fresh['modes']['ysf']['pid'])
+                        os.kill(old_pid, 0)
+                        missing = fresh
+                    recovered = wait_for(lambda r: r['modes']['ysf']['pid'] is not None)
+                    self.assertNotEqual(recovered['modes']['ysf']['pid'], old_pid)
+                    self.assertEqual(recovered['modes']['dmr']['pid'], dmr_pid)
+                    with self.assertRaises(ProcessLookupError):
+                        os.kill(old_pid, 0)
+                finally:
+                    supervisor.terminate()
+                    try:
+                        supervisor.wait(timeout=8)
+                    except subprocess.TimeoutExpired:
+                        supervisor.kill()
+                        supervisor.wait()
+
     def test_mode_reload_and_child_failure_preserve_other_board_processes(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -82,7 +157,14 @@ class SupervisorProcessTests(unittest.TestCase):
                     assert_others(started)
                     ysf_pid = started['modes']['ysf']['pid']
                     reload_flags(False)
-                    stopped = wait_for(lambda modes: modes['ysf']['state'] == 'stopped' and modes['ysf']['pid'] is None)
+                    def exited(pid):
+                        try:
+                            os.kill(pid, 0)
+                            return False
+                        except ProcessLookupError:
+                            return True
+                    stopped = wait_for(lambda modes: modes['ysf']['state'] == 'stopped'
+                                       and modes['ysf']['pid'] is None and exited(ysf_pid))
                     assert_others(stopped)
                     with self.assertRaises(ProcessLookupError):
                         os.kill(ysf_pid, 0)
