@@ -926,6 +926,7 @@
           state.textContent = 'applied';
           state.style.color = '#5cff89';
           msg.textContent = 'Configuration saved. Service changes requested; connection status updates above.';
+          if (boardsSaved) document.getElementById('radioResult').textContent = 'Board settings saved and apply requested.';
           showSnack('Configuration applied', true);
           try { localStorage.setItem('opendvm:cfg_saved', String(Date.now())); } catch {}
           try {
@@ -938,13 +939,15 @@
           const errTxt = (data && data.error) ? data.error : (r.status+' '+r.statusText);
           state.textContent = 'error';
           state.style.color = '#e5484d';
-          msg.textContent = (boardsSaved ? 'Board settings saved; station settings failed: ' : 'Save failed: ') + errTxt;
+          msg.textContent = (boardsSaved ? 'Board settings saved but not applied; station settings failed: ' : 'Save failed: ') + errTxt;
+          if (boardsSaved) document.getElementById('radioResult').textContent = 'Board settings saved. Save & apply again to finish applying them.';
           showSnack('Save error');
         }
       } catch(ex){
         state.textContent = 'error';
         state.style.color = '#e5484d';
         msg.textContent = (boardsSaved ? 'Board settings saved; station save/apply failed: ' : '') + ex.message;
+        if (boardsSaved) document.getElementById('radioResult').textContent = 'Board settings saved. Save & apply again to finish applying them.';
         showSnack('Save / apply failed');
       } finally {
         saving = false;

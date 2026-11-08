@@ -160,13 +160,17 @@ def validate_flags(flags):
 def dispatch(arguments):
     if arguments == ['radios']:
         return radio.snapshot()
-    if arguments == ['configure-radios']:
+    if arguments in (['configure-radios'], ['save-radios']):
         data = radio.validate(json.loads(sys.stdin.read(65537)))
         units()
         previous = radio.RADIO_CONFIG.read_text() if radio.RADIO_CONFIG.exists() else None
         radio.atomic_write(radio.RADIO_CONFIG, json.dumps(data, indent=2) + '\n')
         try:
-            apply_runtime(radio_flags())
+            # The settings form saves boards before the station configuration.
+            # Its final `configure` applies both together: restarting here too
+            # would interrupt the first set of hosts during modem initialization.
+            if arguments == ['configure-radios']:
+                apply_runtime(radio_flags())
         except Exception:
             if previous is None:
                 radio.RADIO_CONFIG.unlink(missing_ok=True)

@@ -84,8 +84,14 @@ def check_radio_bindings(api, request, wait_for, start, stop, logs):
         assert json.loads(request('mode_control.php?q=radios'))['profiles'] == {}
         password.clear()
         password.send_keys(PASSWORD)
+        unit_state = Path('/run/opendvm-ci-units.json')
+        command_start = len(json.loads(unit_state.read_text())['commands'])
         browser.find_element(By.ID, 'saveBtn').click()
         wait.until(lambda driver: driver.find_element(By.ID, 'formState').text == 'applied')
+        commands = json.loads(unit_state.read_text())['commands'][command_start:]
+        host_restarts = [command for command in commands
+                         if 'restart' in command and 'mmdvmhost.service' in command]
+        assert len(host_restarts) == 1, f'One Save & apply restarted the modem host {len(host_restarts)} times'
         assert not browser.execute_script('return window.__radioDirty')
         saved = json.loads(Path('/etc/opendvm-radios.json').read_text())
         assert saved['bindings']['dmr'] == devices[0]

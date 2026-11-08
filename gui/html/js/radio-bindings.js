@@ -217,7 +217,7 @@
       if (!password) { result.textContent = 'Enter Config Password below first.'; return false; }
       const bindings = Object.fromEntries(modes.map(mode => [mode, selects[mode].value]));
       Object.assign(options, {method: 'POST', body: new URLSearchParams({
-        action: 'configure-radios', ConfigPassword: password,
+        action: fromSettings ? 'save-radios' : 'configure-radios', ConfigPassword: password,
         radios: JSON.stringify({bindings, profiles: edited, revision: loaded.revision}),
       })});
     }
@@ -235,7 +235,7 @@
           devices: [...data.devices, ...loaded.devices.filter(board => !fresh.has(board.device)).map(board => ({...board, present: false}))]};
       }
       const pinned = render(data, preserve);
-      result.textContent = save ? 'Board settings saved.' : preserve ? 'Boards rescanned. Your unsaved changes are kept.'
+      result.textContent = save ? (fromSettings ? 'Board settings saved. Applying with the remaining settings…' : 'Board settings saved.') : preserve ? 'Boards rescanned. Your unsaved changes are kept.'
         : pinned ? 'Review the board assignments below. Save & apply will pin them to these devices.' : 'Board settings loaded.';
       if (save && window.__invalidateBm) window.__invalidateBm();
       return true;

@@ -5,6 +5,7 @@ import io
 import json
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -262,6 +263,65 @@ class RadioTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'Service failed'):
                 mode_control.dispatch(['configure-radios'])
         self.assertFalse(radio.RADIO_CONFIG.exists())
+
+    def test_board_save_defers_activation_until_station_apply(self):
+        with self.devices():
+            payload = self.payload()
+        original_host = self.host.read_text()
+        records = {unit: {'ActiveState': 'active', 'UnitFileState': 'enabled'}
+                   for unit in ['mmdvmhost.service', *(value[0] for value in mode_control.MODES.values())]}
+        with self.devices(), patch.object(mode_control, 'HOST_CONFIG', self.host), \
+             patch.object(mode_control, 'units', return_value=records), \
+             patch.object(mode_control, 'systemctl') as systemctl, \
+             patch.object(mode_control.sys, 'stdin', io.StringIO(json.dumps(payload))):
+            result = mode_control.dispatch(['save-radios'])
+            self.assertEqual(result['profiles'][self.b]['rx_frequency'], 433000000)
+            systemctl.assert_not_called()
+            self.assertEqual(self.host.read_text(), original_host)
+            mode_control.dispatch(['configure', '1', '1', '1', '0'])
+            restarts = [call.args for call in systemctl.call_args_list if 'restart' in call.args]
+            self.assertEqual(len(restarts), 1)
+            self.assertIn('mmdvmhost.service', restarts[0])
+        self.assertEqual(radio.read_config()['profiles'][self.b]['rx_frequency'], 433000000)
+
+    def test_shutdown_allows_initializing_child_to_close_before_kill(self):
+        closed = self.host.parent / 'serial-closed'
+        script = '''
+import pathlib, signal, sys, time
+def stop(*args):
+    time.sleep(6)
+    pathlib.Path(sys.argv[1]).write_text('closed')
+    sys.exit(0)
+signal.signal(signal.SIGTERM, stop)
+print('ready', flush=True)
+while True:
+    time.sleep(1)
+'''
+        process = subprocess.Popen([sys.executable, '-c', script, str(closed)], stdout=subprocess.PIPE, text=True)
+        try:
+            self.assertEqual(process.stdout.readline().strip(), 'ready')
+            radio_host.stop_processes([process])
+            self.assertEqual(process.returncode, 0)
+            self.assertEqual(closed.read_text(), 'closed')
+        finally:
+            if process.poll() is None:
+                process.kill()
+            process.wait()
+            process.stdout.close()
+
+    def test_shutdown_still_kills_unresponsive_child(self):
+        script = "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); print('ready', flush=True); time.sleep(60)"
+        process = subprocess.Popen([sys.executable, '-c', script], stdout=subprocess.PIPE, text=True)
+        try:
+            self.assertEqual(process.stdout.readline().strip(), 'ready')
+            with patch.object(radio_host, 'STOP_TIMEOUT', 0.1):
+                radio_host.stop_processes([process])
+            self.assertEqual(process.returncode, -radio_host.signal.SIGKILL)
+        finally:
+            if process.poll() is None:
+                process.kill()
+            process.wait()
+            process.stdout.close()
 
     def test_missing_or_stale_board_report_never_shows_running(self):
         import time
