@@ -42,6 +42,7 @@ def main():
         os.execv(BINARY, [BINARY, str(radio.HOST_CONFIG)])
     radio.RUNTIME.mkdir(parents=True, exist_ok=True)
     children = {}
+    retiring = {}
     retry = {}
     exits = {}
     availability = {}
@@ -82,15 +83,27 @@ def main():
             old = {group['id']: group['config'] for group in groups}
             new = {group['id']: group['config'] for group in desired}
             devices = {group['id']: group['device'] for group in groups}
-            retiring = []
             for key in list(children):
                 if old.get(key) != new.get(key) or not radio.available(devices[key]):
                     reason = 'configuration changed' if old.get(key) != new.get(key) else 'USB device missing'
                     event(f'board={devices[key]} stopping: {reason}')
-                    retiring.append(children.pop(key))
+                    process = children.pop(key)
+                    if process.poll() is None:
+                        process.terminate()
+                    retiring[key] = (process, time.monotonic() + STOP_TIMEOUT)
                     retry.pop(key, None)
-            # Signal all retiring hosts first, so their cleanup runs in parallel.
-            stop_processes(retiring)
+            # A hung serial read must not freeze supervision/status for other
+            # boards during the shutdown grace period. Never open this board
+            # again until its old process has actually exited.
+            for key, (process, deadline) in list(retiring.items()):
+                code = process.poll()
+                if code is not None:
+                    exits[key] = code
+                    del retiring[key]
+                elif deadline is not None and time.monotonic() >= deadline:
+                    event(f'pid={getattr(process, "pid", "unknown")} did not stop within {STOP_TIMEOUT}s; sending SIGKILL')
+                    process.kill()
+                    retiring[key] = (process, None)
             if stopping:
                 break
             for group in desired:
@@ -112,7 +125,7 @@ def main():
                     retry[key] = time.monotonic() + 5
                     process = None
                 state = 'stopped' if not group['enabled_modes'] else 'missing' if not present else 'retrying'
-                if group['enabled_modes'] and present and process is None and time.monotonic() >= retry.get(key, 0):
+                if group['enabled_modes'] and present and process is None and key not in retiring and time.monotonic() >= retry.get(key, 0):
                     process = subprocess.Popen([BINARY, str(radio.RUNTIME / (key + '.ini'))])
                     children[key] = process
                     event(f'board={group["device"]} started pid={getattr(process, "pid", "unknown")} modes={",".join(group["enabled_modes"])}')
@@ -126,7 +139,7 @@ def main():
                 'updated_at': time.time(), 'supervisor_pid': os.getpid(), 'reload_supported': True, 'modes': modes}))
             time.sleep(1)
     finally:
-        stop_processes(children.values())
+        stop_processes([*children.values(), *(process for process, _ in retiring.values())])
         (radio.RUNTIME / 'status.json').unlink(missing_ok=True)
 
 
